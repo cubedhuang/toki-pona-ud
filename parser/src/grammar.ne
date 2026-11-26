@@ -2,7 +2,7 @@
 
 @{%
 import {
-	makeLeaf,
+	makeWord,
 	makeNode,
 	makeList,
 	makeOptionalList,
@@ -15,149 +15,153 @@ const lexer = new TokiPonaLexer();
 
 @lexer lexer
 
+# makeNode(label, head) builds a phrase from the rule's symbols, where head is
+# the index of the head symbol, or null if each symbol depends on the
+# enclosing phrase's head instead.
+
 Main -> Vocative {% id %}
 Main -> Sentence {% id %}
-Main -> Vocative Main {% makeNode("main") %}
+Main -> Vocative Main {% makeNode("main", 1) %}
 
-Vocative -> GeneralSubject WordVocativeMarker {% makeNode("vocative") %}
+Vocative -> GeneralSubject WordVocativeMarker {% makeNode("vocative", 0) %}
 
-Sentence -> WordSentenceStarter Sentence {% makeNode("clause") %}
-Sentence -> Context Sentence {% makeNode("clause") %}
+Sentence -> WordSentenceStarter Sentence {% makeNode("clause", 1) %}
+Sentence -> Context Sentence {% makeNode("clause", 1) %}
 Sentence -> Clause<any> {% id %}
-# Sentence -> Sentence WordEmphasis {% makeNode("clause") %}
+# Sentence -> Sentence WordEmphasis {% makeNode("clause", 0) %}
 
-Context -> GeneralSubject WordContextMarker {% makeNode("context_phrase") %}
-Context -> Clause<strict> WordContextMarker {% makeNode("context_clause") %}
+Context -> GeneralSubject WordContextMarker {% makeNode("context_phrase", 0) %}
+Context -> Clause<strict> WordContextMarker {% makeNode("context_clause", 0) %}
 
 ### Clauses
 
 # P {any/strict} is whether or not a predicate is required
 Clause<any> -> GeneralSubject {% id %}
-Clause<P> -> MarkedSubject Predicates<li> {% makeNode("clause_marked_subject") %}
-Clause<P> -> (UnmarkedSubject {% makeNode("subject") %}) Predicates<none> {% makeNode("clause_unmarked_subject") %}
-Clause<P> -> GeneralSubject Predicates<o> {% makeNode("clause_optative") %}
-Clause<P> -> Predicates<o> {% makeNode("clause_imperative") %}
+Clause<P> -> MarkedSubject Predicates<li> {% makeNode("clause_marked_subject", 1) %}
+Clause<P> -> (UnmarkedSubject {% makeNode("subject", 0) %}) Predicates<none> {% makeNode("clause_unmarked_subject", 1) %}
+Clause<P> -> GeneralSubject Predicates<o> {% makeNode("clause_optative", 1) %}
+Clause<P> -> Predicates<o> {% makeNode("clause_imperative", 0) %}
 
 GeneralSubject -> MarkedSubject {% id %}
 GeneralSubject -> UnmarkedSubject {% id %}
 
-MarkedSubject -> (WordMarkedSubjectHead {% makeNode("head") %}) {% makeNode("subject") %}
-MarkedSubject -> PiPhrase<multiple> {% makeNode("subject") %}
+MarkedSubject -> WordMarkedSubjectHead {% makeNode("subject", 0) %}
+MarkedSubject -> PiPhrase<multiple> {% makeNode("subject", 0) %}
 MarkedSubject -> MultipleSubjects<none> {% id %}
 
 # M {none/marked} is whether or not the subject is preceded by "en"
-MultipleSubjects<none> -> (Phrase {% makeNode("subject") %}) MultipleSubjects<marked> {% makeCoordination("& subjects") %}
+MultipleSubjects<none> -> (Phrase {% makeNode("subject", 0) %}) MultipleSubjects<marked> {% makeCoordination("& subjects") %}
 MultipleSubjects<marked> -> EnSubject {% id %}
 MultipleSubjects<marked> -> EnSubject MultipleSubjects<marked> {% makeCoordination("& subjects") %}
-EnSubject -> SubjectMarker Phrase {% makeNode("subject") %}
+EnSubject -> SubjectMarker Phrase {% makeNode("subject", 1) %}
 
 SubjectMarker -> WordSubjectMarker {% id %}
 SubjectMarker -> WordDisjunctMarker {% id %}
 
-UnmarkedSubject -> WordUnmarkedSubject {% makeNode("head") %}
+UnmarkedSubject -> WordUnmarkedSubject {% id %}
 
 # M {none/li/o/marked} is what the predicate can be marked with
 Predicates<M> -> Predicate<M> {% id %}
 Predicates<M> -> Predicate<M> Predicates<marked> {% makeCoordination("& predicates") %}
 
-Predicate<li> -> WordIndicativeMarker PreverbPhrase {% makeNode("predicate") %}
-Predicate<o> -> WordDeonticMarker PreverbPhrase {% makeNode("predicate") %}
-Predicate<marked> -> WordPredicateMarker PreverbPhrase {% makeNode("predicate") %}
-Predicate<none> -> PreverbPhrase {% makeNode("predicate") %}
+Predicate<li> -> WordIndicativeMarker PreverbPhrase {% makeNode("predicate", 1) %}
+Predicate<o> -> WordDeonticMarker PreverbPhrase {% makeNode("predicate", 1) %}
+Predicate<marked> -> WordPredicateMarker PreverbPhrase {% makeNode("predicate", 1) %}
+Predicate<none> -> PreverbPhrase {% makeNode("predicate", 0) %}
 
 ### Predicates
 
-PreverbPhrase -> Preverb PreverbPhrase {% makeNode("preverb_phrase") %}
+PreverbPhrase -> Preverb PreverbPhrase {% makeNode("preverb_phrase", 1) %}
 PreverbPhrase -> VerbPhrase {% id %}
 
 Preverb -> WordPreverb {% id %}
-Preverb -> WordPreverb WordNegator {% makeNode("pv") %}
+Preverb -> WordPreverb WordNegator {% makeNode("negated_preverb", 0) %}
 
 # Transitive, intransitive, or prepositional
 VerbPhrase -> VerbPhraseTransitive {% id %}
 VerbPhrase -> VerbPhraseIntransitive {% id %}
 VerbPhrase -> VerbPhrasePrepositional {% id %}
 
-VerbPhraseTransitive -> Phrase Objects {% makeNode("verb_phrase_transitive") %}
-VerbPhraseIntransitive -> Phrase {% makeNode("verb_phrase_intransitive") %}
-VerbPhraseIntransitive -> Phrase Prepositions {% makeNode("verb_phrase_intransitive") %}
-VerbPhrasePrepositional -> PrepositionPhrase {% makeNode("verb_phrase_prepositional") %}
-VerbPhrasePrepositional -> PrepositionPhrase Prepositions {% makeNode("verb_phrase_prepositional") %}
+VerbPhraseTransitive -> Phrase Objects {% makeNode("verb_phrase_transitive", 0) %}
+VerbPhraseIntransitive -> Phrase {% makeNode("verb_phrase_intransitive", 0) %}
+VerbPhraseIntransitive -> Phrase Prepositions {% makeNode("verb_phrase_intransitive", 0) %}
+VerbPhrasePrepositional -> PrepositionPhrase {% makeNode("verb_phrase_prepositional", 0) %}
+VerbPhrasePrepositional -> PrepositionPhrase Prepositions {% makeNode("verb_phrase_prepositional", 0) %}
 
-Objects -> ObjectPhrase:+ {% makeOptionalList("& objects") %}
-ObjectPhrase -> Object {% makeNode("object_phrase") %}
-ObjectPhrase -> Object Prepositions {% makeNode("object_phrase") %}
-Object -> WordObjectMarker DisjunctPhrase {% makeNode("e") %}
+Objects -> ObjectPhrase:+ {% makeOptionalList("& objects", null) %}
+ObjectPhrase -> Object {% makeNode("object_phrase", null) %}
+ObjectPhrase -> Object Prepositions {% makeNode("object_phrase", null) %}
+Object -> WordObjectMarker DisjunctPhrase {% makeNode("e", 1) %}
 
-Prepositions -> PrepositionPhrase:+ {% makeOptionalList("& prepositions") %}
-PrepositionPhrase -> Preposition DisjunctPhrase {% makeNode("preposition_phrase") %}
+Prepositions -> PrepositionPhrase:+ {% makeOptionalList("& prepositions", null) %}
+PrepositionPhrase -> Preposition DisjunctPhrase {% makeNode("preposition_phrase", 1) %}
 
 Preposition -> WordPreposition {% id %}
-Preposition -> WordPreposition WordNegator {% makeNode("prep") %}
+Preposition -> WordPreposition WordNegator {% makeNode("negated_preposition", 0) %}
 
 ### Phrases
 
 DisjunctPhrase -> Phrase {% id %}
-DisjunctPhrase -> (Phrase {% makeNode("option") %}) DisjunctPhrases {% makeCoordination("& disjuncts") %}
+DisjunctPhrase -> (Phrase {% makeNode("option", 0) %}) DisjunctPhrases {% makeCoordination("& disjuncts") %}
 DisjunctPhrases -> AnuPhrase {% id %}
 DisjunctPhrases -> AnuPhrase DisjunctPhrases {% makeCoordination("& disjuncts") %}
-AnuPhrase -> WordDisjunctMarker Phrase {% makeNode("option") %}
+AnuPhrase -> WordDisjunctMarker Phrase {% makeNode("option", 1) %}
 
 Phrase -> PiPhrase<any> {% id %}
 
 # M {any/multiple} is whether or not some modifier is required
 PiPhrase<M> -> NanpaPhrase<M> {% id %}
-PiPhrase<M> -> PiPhrase<any> PiModifier {% makeNode("phrase") %}
+PiPhrase<M> -> PiPhrase<any> PiModifier {% makeNode("phrase", 0) %}
 
-PiModifier -> WordRegrouper PiPhrase<multiple> {% makeNode("pi") %}
+PiModifier -> WordRegrouper PiPhrase<multiple> {% makeNode("pi", 1) %}
 
 NanpaPhrase<M> -> SimplePhrase<M> {% id %}
-NanpaPhrase<M> -> NanpaPhrase<any> Ordinal {% makeNode("phrase") %}
+NanpaPhrase<M> -> NanpaPhrase<any> Ordinal {% makeNode("phrase", 0) %}
 
-Ordinal -> WordOrdinalMarker Number {% makeNode("ordinal") %}
+Ordinal -> WordOrdinalMarker Number {% makeNode("ordinal", 1) %}
 
-SimplePhrase<M> -> SimplePhrase<any> WordModifier {% makeNode("phrase") %}
-SimplePhrase<any> -> WordHead {% makeNode("head") %}
+SimplePhrase<M> -> SimplePhrase<any> WordModifier {% makeNode("phrase", 0) %}
+SimplePhrase<any> -> WordHead {% id %}
 
-Number -> WordNumber:+ {% makeList("number") %}
-WordNumber -> %word_number {% makeLeaf("#") %}
+Number -> WordNumber:+ {% makeList("number", 0) %}
+WordNumber -> %word_number {% makeWord("number") %}
 
 ### Words
 
-WordEmphasis -> "a" {% makeLeaf("emph") %}
-WordObjectMarker -> "e" {% makeLeaf("obj") %}
-WordRegrouper -> "pi" {% makeLeaf("regroup") %}
-WordOrdinalMarker -> "nanpa" {% makeLeaf("ord") %}
-WordContextMarker -> "la" {% makeLeaf("ctx") %}
-WordSubjectMarker -> "en" {% makeLeaf("conj") %}
-WordNegator -> "ala" WordEmphasis:?  {% makeLeaf("neg") %}
-WordDisjunctMarker -> "anu" {% makeLeaf("or") %}
+WordEmphasis -> "a" {% makeWord("emphasis") %}
+WordObjectMarker -> "e" {% makeWord("object_marker") %}
+WordRegrouper -> "pi" {% makeWord("regrouper") %}
+WordOrdinalMarker -> "nanpa" {% makeWord("ordinal_marker") %}
+WordContextMarker -> "la" {% makeWord("context_marker") %}
+WordSubjectMarker -> "en" {% makeWord("subject_marker") %}
+WordNegator -> "ala" WordEmphasis:?  {% makeWord("negator") %}
+WordDisjunctMarker -> "anu" {% makeWord("disjunct_marker") %}
 
 WordPredicateMarker -> WordIndicativeMarker {% id %}
 WordPredicateMarker -> WordDeonticMarker {% id %}
 WordPredicateMarker -> WordDisjunctMarker {% id %}
 
-WordIndicativeMarker -> "li" {% makeLeaf("ind") %}
-WordDeonticMarker -> "o" {% makeLeaf("deo") %}
-WordVocativeMarker -> "o" {% makeLeaf("voc") %}
+WordIndicativeMarker -> "li" {% makeWord("indicative_marker") %}
+WordDeonticMarker -> "o" {% makeWord("deontic_marker") %}
+WordVocativeMarker -> "o" {% makeWord("vocative_marker") %}
 
 WordHead -> WordMarkedSubjectHead {% id %}
 WordHead -> WordUnmarkedSubject {% id %}
 
-WordMarkedSubjectHead -> %word_content {% makeLeaf("cont") %}
-WordMarkedSubjectHead -> %word_preposition {% makeLeaf("cont") %}
-WordMarkedSubjectHead -> %word_preverb {% makeLeaf("cont") %}
-WordMarkedSubjectHead -> %word_number {% makeLeaf("cont") %}
-WordUnmarkedSubject -> %word_unmarked_subject {% makeLeaf("cont") %}
+WordMarkedSubjectHead -> %word_content {% makeWord("content") %}
+WordMarkedSubjectHead -> %word_preposition {% makeWord("content") %}
+WordMarkedSubjectHead -> %word_preverb {% makeWord("content") %}
+WordMarkedSubjectHead -> %word_number {% makeWord("content") %}
+WordUnmarkedSubject -> %word_unmarked_subject {% makeWord("content") %}
 
-WordModifier -> %word_modifier_only {% makeLeaf("cont") %}
+WordModifier -> %word_modifier_only {% makeWord("content") %}
 WordModifier -> WordEmphasis {% id %}
 WordModifier -> WordHead {% id %}
 
-WordPreverb -> %word_preverb WordEmphasis:? {% makeLeaf("pv") %}
-WordPreposition -> %word_preposition WordEmphasis:? {% makeLeaf("prep") %}
+WordPreverb -> %word_preverb WordEmphasis:? {% makeWord("preverb") %}
+WordPreposition -> %word_preposition WordEmphasis:? {% makeWord("preposition") %}
 
-WordSentenceStarter -> "taso" WordEmphasis:? {% makeLeaf("start") %}
-WordSentenceStarter -> "kin" WordEmphasis:? {% makeLeaf("start") %}
-WordSentenceStarter -> "n" WordEmphasis:? {% makeLeaf("start") %}
-WordSentenceStarter -> WordEmphasis {% makeNode("start") %}
+WordSentenceStarter -> "taso" WordEmphasis:? {% makeWord("sentence_starter") %}
+WordSentenceStarter -> "kin" WordEmphasis:? {% makeWord("sentence_starter") %}
+WordSentenceStarter -> "n" WordEmphasis:? {% makeWord("sentence_starter") %}
+WordSentenceStarter -> "a" {% makeWord("sentence_starter") %}

@@ -1,4 +1,5 @@
-import type { Label, Tree, Word } from "./types.js";
+import { isModifier } from "./tree.js";
+import type { PhraseLabel, Tree, Word, WordRole } from "./types.js";
 
 export type Tag =
 	| "noun"
@@ -25,7 +26,7 @@ const headTags: Record<HeadRole, Tag> = {
 	iverb: "iverb",
 };
 
-function headRoleOf(label: Label): HeadRole | undefined {
+function headRoleOf(label: PhraseLabel): HeadRole | undefined {
 	if (label.startsWith("clause") || label === "object_phrase") return "noun";
 	if (label === "verb_phrase_transitive") return "tverb";
 	if (
@@ -41,26 +42,26 @@ function headRoleOf(label: Label): HeadRole | undefined {
 export function tagTree(
 	tree: Tree,
 	role: HeadRole = "interjection",
-	inHead = false,
+	modifier = false,
 ): TaggedWord[] {
-	role = headRoleOf(tree.label) ?? role;
-	inHead ||= tree.label === "head";
-
-	if (tree.type === "node") {
-		return tree.children.flatMap((child) => tagTree(child, role, inHead));
+	if (tree.type === "word") {
+		return [{ word: tree, tag: tagWord(tree.role, role, modifier) }];
 	}
 
-	return [{ word: tree.word, tag: tagWord(tree.label, role, inHead) }];
+	role = headRoleOf(tree.label) ?? role;
+	return tree.children.flatMap((child, i) =>
+		tagTree(child, role, isModifier(tree, i)),
+	);
 }
 
-function tagWord(label: Label, role: HeadRole, inHead: boolean): Tag {
-	switch (label) {
-		case "prep":
+function tagWord(wordRole: WordRole, role: HeadRole, modifier: boolean): Tag {
+	switch (wordRole) {
+		case "preposition":
 			return "preposition";
-		case "pv":
+		case "preverb":
 			return "preverb";
-		case "cont":
-			return inHead ? headTags[role] : "modifier";
+		case "content":
+			return modifier ? "modifier" : headTags[role];
 		default:
 			return "particle";
 	}

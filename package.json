@@ -1,0 +1,8 @@
+{
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"build": "pnpm --filter ilo-nasin build && pnpm --filter viewer build",
+		"dev": "pnpm --filter ilo-nasin codegen && pnpm --filter viewer dev"
+	}
+}

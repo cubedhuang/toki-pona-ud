@@ -1,7 +1,8 @@
 import nearley from "nearley";
 
 import grammar from "./grammar.js";
-import type { Label, Tree } from "./types.js";
+import { isModifier } from "./tree.js";
+import type { PhraseLabel, Tree } from "./types.js";
 
 export interface Result {
 	tree: Tree;
@@ -29,34 +30,34 @@ export function parse(text: string): Result[] {
 	}));
 }
 
-const goodLabels = new Set<Label>([
+const goodLabels = new Set<PhraseLabel>([
 	"ordinal",
 	"preverb_phrase",
 	"preposition_phrase",
 	"verb_phrase_intransitive",
 	"verb_phrase_transitive",
 	"verb_phrase_prepositional",
-	"start",
 ]);
 
 // These words are rarely heads.
 const unlikelyHeads = new Set(["ala", "taso", "kin", "n"]);
 
-function scoreTree(tree: Tree): number {
-	let score = goodLabels.has(tree.label) ? 1 : 0;
-
-	if (tree.type === "leaf") return score;
-
-	const [child] = tree.children;
-	if (
-		tree.label === "head" &&
-		tree.children.length === 1 &&
-		child!.type === "leaf" &&
-		unlikelyHeads.has(child!.word.text)
-	) {
-		score -= 1.5;
+function scoreTree(tree: Tree, modifier = false): number {
+	if (tree.type === "word") {
+		if (tree.role === "sentence_starter") return 1;
+		if (
+			tree.role === "content" &&
+			!modifier &&
+			unlikelyHeads.has(tree.text)
+		) {
+			return -1.5;
+		}
+		return 0;
 	}
 
-	for (const child of tree.children) score += scoreTree(child);
+	let score = goodLabels.has(tree.label) ? 1 : 0;
+	tree.children.forEach((child, i) => {
+		score += scoreTree(child, isModifier(tree, i));
+	});
 	return score;
 }

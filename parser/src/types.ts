@@ -1,5 +1,4 @@
-export const labels = [
-	// Phrases
+export const phraseLabels = [
 	"main",
 	"vocative",
 	"clause",
@@ -14,6 +13,7 @@ export const labels = [
 	"predicate",
 	"& predicates",
 	"preverb_phrase",
+	"negated_preverb",
 	"verb_phrase_transitive",
 	"verb_phrase_intransitive",
 	"verb_phrase_prepositional",
@@ -21,6 +21,7 @@ export const labels = [
 	"e",
 	"& objects",
 	"preposition_phrase",
+	"negated_preposition",
 	"& prepositions",
 	"option",
 	"& disjuncts",
@@ -28,46 +29,52 @@ export const labels = [
 	"pi",
 	"ordinal",
 	"number",
-	"head",
-	"start",
-	"pv",
-	"prep",
-	// Words
-	"#",
-	"emph",
-	"obj",
-	"regroup",
-	"ord",
-	"ctx",
-	"conj",
-	"neg",
-	"or",
-	"ind",
-	"deo",
-	"voc",
-	"cont",
+	"emphasized",
 ] as const;
 
-export type Label = (typeof labels)[number];
+export type PhraseLabel = (typeof phraseLabels)[number];
+
+export const wordRoles = [
+	"content",
+	"number",
+	"emphasis",
+	"negator", // ala
+	"preverb",
+	"preposition",
+	"object_marker", // e
+	"regrouper", // pi
+	"ordinal_marker", // nanpa
+	"context_marker", // la
+	"subject_marker", // en
+	"disjunct_marker", // anu
+	"indicative_marker", // li
+	"deontic_marker", // o
+	"vocative_marker", // o
+	"sentence_starter", // taso, kin, n, a
+] as const;
+
+export type WordRole = (typeof wordRoles)[number];
 
 export interface Word {
-	/** Character offset of the word in the input text. */
-	index: number;
+	type: "word";
+	role: WordRole;
 	text: string;
+	/** Index of the word among the sentence's words. */
+	position: number;
+	/** Character offset of the word in the input text. */
+	offset: number;
 }
 
-export interface Leaf {
-	type: "leaf";
-	label: Label;
-	word: Word;
-	/** A trailing emphatic "a" attached to this word, as in "ala a". */
-	emphasis?: Leaf;
-}
-
-export interface Node {
-	type: "node";
-	label: Label;
+export interface Phrase {
+	type: "phrase";
+	label: PhraseLabel;
 	children: Tree[];
+	/**
+	 * Index of the head child, or `null` for a group whose children each
+	 * depend on the enclosing phrase's head (e.g. several prepositional
+	 * phrases after a verb).
+	 */
+	head: number | null;
 }
 
-export type Tree = Leaf | Node;
+export type Tree = Word | Phrase;

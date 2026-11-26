@@ -15,7 +15,10 @@ export type TokenType = (typeof tokenTypes)[number];
 export interface Token {
 	type: TokenType;
 	value: string;
-	index: number;
+	/** Index of the token among the sentence's tokens, from 0. */
+	position: number;
+	/** Character offset of the token in the input text. */
+	offset: number;
 }
 
 export const particles = new Set([
@@ -56,16 +59,23 @@ function classify(word: string): TokenType {
 /** Splits text into runs of ASCII letters; everything else is skipped. */
 export class TokiPonaLexer implements Lexer {
 	private words: IterableIterator<RegExpMatchArray> = [].values();
+	private position = 0;
 
 	reset(text: string) {
 		this.words = text.matchAll(/[a-z]+/gi);
+		this.position = 0;
 	}
 
 	next(): Token | undefined {
 		const match = this.words.next().value;
 		if (!match) return undefined;
 		const value = match[0];
-		return { type: classify(value), value, index: match.index! };
+		return {
+			type: classify(value),
+			value,
+			position: this.position++,
+			offset: match.index!,
+		};
 	}
 
 	save() {
@@ -73,7 +83,7 @@ export class TokiPonaLexer implements Lexer {
 	}
 
 	formatError(token: Token) {
-		return `'${token.value}' at index ${token.index}`;
+		return `'${token.value}' at index ${token.offset}`;
 	}
 
 	has(tokenType: string) {

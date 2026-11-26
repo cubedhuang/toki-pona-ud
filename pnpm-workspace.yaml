@@ -1,0 +1,6 @@
+packages:
+  - parser
+  - viewer
+
+allowBuilds:
+  esbuild: true
