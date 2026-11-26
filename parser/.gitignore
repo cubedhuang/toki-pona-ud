@@ -1,0 +1,6 @@
+dist
+node_modules
+
+scripts/*.js
+src/grammar-processed.ne
+src/grammar.ts
