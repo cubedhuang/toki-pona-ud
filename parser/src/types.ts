@@ -1,52 +1,73 @@
-import { labels } from "./consts.js";
+export const labels = [
+	// Phrases
+	"main",
+	"vocative",
+	"clause",
+	"context_phrase",
+	"context_clause",
+	"clause_marked_subject",
+	"clause_unmarked_subject",
+	"clause_optative",
+	"clause_imperative",
+	"subject",
+	"& subjects",
+	"predicate",
+	"& predicates",
+	"preverb_phrase",
+	"verb_phrase_transitive",
+	"verb_phrase_intransitive",
+	"verb_phrase_prepositional",
+	"object_phrase",
+	"e",
+	"& objects",
+	"preposition_phrase",
+	"& prepositions",
+	"option",
+	"& disjuncts",
+	"phrase",
+	"pi",
+	"ordinal",
+	"number",
+	"head",
+	"start",
+	"pv",
+	"prep",
+	// Words
+	"#",
+	"emph",
+	"obj",
+	"regroup",
+	"ord",
+	"ctx",
+	"conj",
+	"neg",
+	"or",
+	"ind",
+	"deo",
+	"voc",
+	"cont",
+] as const;
 
 export type Label = (typeof labels)[number];
 
-export type Tree = Leaf | Branch | Labelled | Rose;
-
 export interface Word {
-	index: number | undefined;
+	/** Character offset of the word in the input text. */
+	index: number;
 	text: string;
 }
 
-interface TreeBase {
-	/**
-	 * The syntactic label of this node.
-	 */
-	label: Label;
-	/**
-	 * An index correlating a binding site with the structure it binds.
-	 */
-	binding?: number;
-	/**
-	 * A letter correlating an overt verbal argument with the PROs in a serial
-	 * verb.
-	 */
-	coindex?: string;
-	/**
-	 * The source text for this subtree. This is always "surface Toaq" even if the tree represents a deep structure.
-	 */
-	source: string;
-}
-
-export interface Leaf extends TreeBase {
+export interface Leaf {
 	type: "leaf";
+	label: Label;
 	word: Word;
-	aux?: Tree | undefined;
+	/** A trailing emphatic "a" attached to this word, as in "ala a". */
+	emphasis?: Leaf;
 }
 
-export interface Branch extends TreeBase {
-	type: "branch";
-	left: Tree;
-	right: Tree;
-}
-
-export interface Labelled extends TreeBase {
-	type: "labelled";
-	tree: Tree;
-}
-
-export interface Rose extends TreeBase {
-	type: "rose";
+export interface Node {
+	type: "node";
+	label: Label;
 	children: Tree[];
 }
+
+export type Tree = Leaf | Node;

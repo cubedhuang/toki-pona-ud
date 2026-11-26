@@ -15,14 +15,9 @@
 	"types": "dist/index.d.ts",
 	"type": "module",
 	"scripts": {
-		"test": "echo \"Error: no test specified\" && exit 1",
 		"build": "pnpm codegen && tsc",
-		"format": "prettier --write .",
-		"codegen:prepare": "tsc -p scripts/tsconfig.json",
-		"codegen:preprocess": "pnpm exec esr scripts/grammar-preprocessor.js src/grammar.ne src/grammar-processed.ne",
-		"codegen:compile": "pnpm exec nearleyc src/grammar-processed.ne -o src/grammar.ts",
-		"codegen:postprocess": "pnpm exec esr scripts/grammar-postprocessor.js src/grammar.ts src/grammar.ts",
-		"codegen": "pnpm codegen:prepare && pnpm codegen:preprocess && pnpm codegen:compile && pnpm codegen:postprocess"
+		"codegen": "esr scripts/expand-generics.ts src/grammar.ne src/grammar.expanded.ne && nearleyc src/grammar.expanded.ne -o src/grammar.js",
+		"format": "prettier --write ."
 	},
 	"dependencies": {
 		"nearley": "^2.20.1"

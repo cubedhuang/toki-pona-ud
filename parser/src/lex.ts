@@ -6,21 +6,30 @@ export const tokenTypes = [
 	"word_preposition",
 	"word_preverb",
 	"word_number",
-	"word_modifier_only", // kin and names
+	"word_modifier_only", // names
 	"word_unmarked_subject", // mi, sina
 ] as const;
 
 export type TokenType = (typeof tokenTypes)[number];
 
-export type Token = {
+export interface Token {
 	type: TokenType;
 	value: string;
 	index: number;
-};
+}
 
-export const particles = ["li", "e", "pi", "la", "en", "o", "anu", "a"];
-export const prepositions = ["tan", "lon", "sama", "tawa", "kepeken"];
-export const preverbs = [
+export const particles = new Set([
+	"li",
+	"e",
+	"pi",
+	"la",
+	"en",
+	"o",
+	"anu",
+	"a",
+]);
+export const prepositions = new Set(["tan", "lon", "sama", "tawa", "kepeken"]);
+export const preverbs = new Set([
 	"awen",
 	"kama",
 	"wile",
@@ -28,51 +37,35 @@ export const preverbs = [
 	"sona",
 	"lukin",
 	"alasa",
-];
-export const numbers = ["wan", "tu", "luka", "mute", "ale", "ali"];
-export const unmarkedSubjects = ["mi", "sina"];
+]);
+export const numbers = new Set(["wan", "tu", "luka", "mute", "ale", "ali"]);
+export const unmarkedSubjects = new Set(["mi", "sina"]);
 
+const tokenTypeSet = new Set<string>(tokenTypes);
+
+function classify(word: string): TokenType {
+	if (particles.has(word)) return "word_particle";
+	if (prepositions.has(word)) return "word_preposition";
+	if (preverbs.has(word)) return "word_preverb";
+	if (numbers.has(word)) return "word_number";
+	if (word[0] !== word[0]!.toLowerCase()) return "word_modifier_only";
+	if (unmarkedSubjects.has(word)) return "word_unmarked_subject";
+	return "word_content";
+}
+
+/** Splits text into runs of ASCII letters; everything else is skipped. */
 export class TokiPonaLexer implements Lexer {
-	private i = 0;
-	private text = "";
+	private words: IterableIterator<RegExpMatchArray> = [].values();
 
 	reset(text: string) {
-		this.i = 0;
-		this.text = text;
+		this.words = text.matchAll(/[a-z]+/gi);
 	}
 
-	next() {
-		this.skipNonWord();
-
-		if (this.i >= this.text.length) {
-			return;
-		}
-
-		const index = this.i;
-
-		while (this.i < this.text.length && this.isWord(this.text[this.i])) {
-			this.i++;
-		}
-
-		const value = this.text.substring(index, this.i);
-
-		let type: TokenType = "word_content";
-
-		if (particles.includes(value)) {
-			type = "word_particle";
-		} else if (prepositions.includes(value)) {
-			type = "word_preposition";
-		} else if (preverbs.includes(value)) {
-			type = "word_preverb";
-		} else if (numbers.includes(value)) {
-			type = "word_number";
-		} else if (value[0] === value[0]?.toUpperCase()) {
-			type = "word_modifier_only";
-		} else if (unmarkedSubjects.includes(value)) {
-			type = "word_unmarked_subject";
-		}
-
-		return { type, value, index };
+	next(): Token | undefined {
+		const match = this.words.next().value;
+		if (!match) return undefined;
+		const value = match[0];
+		return { type: classify(value), value, index: match.index! };
 	}
 
 	save() {
@@ -84,19 +77,6 @@ export class TokiPonaLexer implements Lexer {
 	}
 
 	has(tokenType: string) {
-		return tokenTypes.includes(tokenType as TokenType);
-	}
-
-	private skipNonWord() {
-		while (this.i < this.text.length && !this.isWord(this.text[this.i])) {
-			this.i++;
-		}
-	}
-
-	private isWord(char: string | undefined) {
-		if (char === undefined) {
-			return false;
-		}
-		return /[a-z]/i.test(char);
+		return tokenTypeSet.has(tokenType);
 	}
 }

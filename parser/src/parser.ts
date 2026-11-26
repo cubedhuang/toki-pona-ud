@@ -3,37 +3,33 @@ import nearley from "nearley";
 import grammar from "./grammar.js";
 import type { Label, Tree } from "./types.js";
 
-export type Result = { tree: Tree; score: number };
+export interface Result {
+	tree: Tree;
+	/** Probability of this parse relative to the others (softmax of scores). */
+	score: number;
+}
 
-export function parse(text: string) {
+/**
+ * Parses a sentence into every possible tree, most likely first. Throws on a
+ * syntax error; returns `[]` if the sentence ends early.
+ */
+export function parse(text: string): Result[] {
 	const parser = new nearley.Parser(
 		nearley.Grammar.fromCompiled(grammar),
 	).feed(text);
 
-	const results = sortResults(parser.results);
-
-	return results;
-}
-
-function sortResults(results: Tree[]): Result[] {
-	const scoredResults: Result[] = results
-		.map((tree) => ({
-			tree,
-			score: scoreTree(tree),
-		}))
+	const scored = (parser.results as Tree[])
+		.map((tree) => ({ tree, score: scoreTree(tree) }))
 		.sort((a, b) => b.score - a.score);
 
-	const exps = scoredResults.map((sr) => Math.exp(sr.score));
-	const sum = exps.reduce((a, b) => a + b, 0);
-
-	for (let i = 0; i < scoredResults.length; i++) {
-		scoredResults[i]!.score = exps[i]! / sum;
-	}
-
-	return scoredResults;
+	const sum = scored.reduce((acc, r) => acc + Math.exp(r.score), 0);
+	return scored.map((r) => ({
+		tree: r.tree,
+		score: Math.exp(r.score) / sum,
+	}));
 }
 
-const goodLabels: Label[] = [
+const goodLabels = new Set<Label>([
 	"ordinal",
 	"preverb_phrase",
 	"preposition_phrase",
@@ -41,38 +37,26 @@ const goodLabels: Label[] = [
 	"verb_phrase_transitive",
 	"verb_phrase_prepositional",
 	"start",
-];
+]);
+
+// These words are rarely heads.
+const unlikelyHeads = new Set(["ala", "taso", "kin", "n"]);
 
 function scoreTree(tree: Tree): number {
-	let score = 0;
+	let score = goodLabels.has(tree.label) ? 1 : 0;
 
-	if (goodLabels.includes(tree.label)) {
-		score += 1;
-	}
+	if (tree.type === "leaf") return score;
 
-	// 'ala' and 'taso' are rare as heads
+	const [child] = tree.children;
 	if (
-		tree.type === "labelled" &&
 		tree.label === "head" &&
-		tree.tree.type === "leaf" &&
-		["ala", "taso", "kin", "n"].includes(tree.tree.word.text)
+		tree.children.length === 1 &&
+		child!.type === "leaf" &&
+		unlikelyHeads.has(child!.word.text)
 	) {
 		score -= 1.5;
 	}
 
-	switch (tree.type) {
-		case "leaf":
-			return score;
-		case "branch":
-			return score + scoreTree(tree.left) + scoreTree(tree.right);
-		case "labelled":
-			return score + scoreTree(tree.tree);
-		case "rose":
-			return (
-				score +
-				tree.children.reduce((acc, child) => acc + scoreTree(child), 0)
-			);
-		default:
-			throw new Error(`Unexpected tree: ${tree}`);
-	}
+	for (const child of tree.children) score += scoreTree(child);
+	return score;
 }

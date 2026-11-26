@@ -161,21 +161,6 @@ wheels = [
 ]
 
 [[package]]
-name = "ling4813project"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "requests" },
-    { name = "sonatoki" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "requests", specifier = "==2.32.5" },
-    { name = "sonatoki", specifier = "==0.13.0" },
-]
-
-[[package]]
 name = "regex"
 version = "2026.11.25"
 source = { registry = "https://pypi.org/simple" }
@@ -307,6 +292,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/d8/f5/7586daba2713c7497bee38657e8afb74edc1ef6140fc5e26f4db231d1895/sonatoki-0.13.0.tar.gz", hash = "sha256:66d59cddf67abef9523318caaf596739947e2801a480925f2ad4689746e3ef06", size = 156067, upload-time = "2026-06-26T14:26:44.875Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/07/dc/66dd4bcefa5810a25850d0a9a5964561bb2b8cb698f681ab5b1372f668b2/sonatoki-0.13.0-py3-none-any.whl", hash = "sha256:0b634ba32b2a9062a65f99e66be8be277996dd3ea6c79a217fb2032484af9fbb", size = 146975, upload-time = "2026-06-26T14:26:43.857Z" },
+]
+
+[[package]]
+name = "toki-pona-ud"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "requests" },
+    { name = "sonatoki" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "requests", specifier = "==2.32.5" },
+    { name = "sonatoki", specifier = "==0.13.0" },
 ]
 
 [[package]]

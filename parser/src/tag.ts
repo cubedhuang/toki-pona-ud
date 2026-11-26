@@ -1,93 +1,66 @@
 import type { Label, Tree, Word } from "./types.js";
 
-export const tags = [
-	"noun",
-	"tverb",
-	"iverb",
-	"modifier",
-	"particle",
-	"preposition",
-	"preverb",
-	"interjection_head",
-] as const;
-
-export type Tag = (typeof tags)[number];
+export type Tag =
+	| "noun"
+	| "tverb"
+	| "iverb"
+	| "modifier"
+	| "particle"
+	| "preposition"
+	| "preverb"
+	| "interjection_head";
 
 export interface TaggedWord {
 	word: Word;
 	tag: Tag;
 }
 
-const sContexts = ["interjection", "noun", "iverbal", "tverbal"] as const;
-type SContext = (typeof sContexts)[number];
+/** What a content word heading the current phrase would be. */
+type HeadRole = "interjection" | "noun" | "tverb" | "iverb";
 
-const nContexts = ["head", "modifier"] as const;
-type NContext = (typeof nContexts)[number];
+const headTags: Record<HeadRole, Tag> = {
+	interjection: "interjection_head",
+	noun: "noun",
+	tverb: "tverb",
+	iverb: "iverb",
+};
 
-export function tagTree(
-	tree: Tree,
-	sContext: SContext = "interjection",
-	nContext: NContext = "modifier",
-): TaggedWord[] {
-	if (tree.label.startsWith("clause") || tree.label === "object_phrase") {
-		sContext = "noun";
-	} else if (tree.label === "verb_phrase_transitive") {
-		sContext = "tverbal";
-	} else if (
-		tree.label === "verb_phrase_intransitive" ||
-		tree.label === "verb_phrase_prepositional"
+function headRoleOf(label: Label): HeadRole | undefined {
+	if (label.startsWith("clause") || label === "object_phrase") return "noun";
+	if (label === "verb_phrase_transitive") return "tverb";
+	if (
+		label === "verb_phrase_intransitive" ||
+		label === "verb_phrase_prepositional"
 	) {
-		sContext = "iverbal";
+		return "iverb";
 	}
-
-	if (tree.label === "head") {
-		nContext = "head";
-	}
-
-	switch (tree.type) {
-		case "branch":
-			return [
-				...tagTree(tree.left, sContext, nContext),
-				...tagTree(tree.right, sContext, nContext),
-			];
-		case "labelled":
-			return tagTree(tree.tree, sContext, nContext);
-		case "rose":
-			return tree.children.flatMap((t) => tagTree(t, sContext, nContext));
-		case "leaf":
-			return [
-				{
-					word: tree.word,
-					tag: determineTag(tree.label, sContext, nContext),
-				},
-			];
-		default:
-			throw new Error("unreachable");
-	}
+	return undefined;
 }
 
-function determineTag(
-	label: Label,
-	sContext: SContext,
-	nContext: NContext,
-): Tag {
+/** Tags each word in a tree with its part of speech, in order. */
+export function tagTree(
+	tree: Tree,
+	role: HeadRole = "interjection",
+	inHead = false,
+): TaggedWord[] {
+	role = headRoleOf(tree.label) ?? role;
+	inHead ||= tree.label === "head";
+
+	if (tree.type === "node") {
+		return tree.children.flatMap((child) => tagTree(child, role, inHead));
+	}
+
+	return [{ word: tree.word, tag: tagWord(tree.label, role, inHead) }];
+}
+
+function tagWord(label: Label, role: HeadRole, inHead: boolean): Tag {
 	switch (label) {
 		case "prep":
 			return "preposition";
 		case "pv":
 			return "preverb";
 		case "cont":
-			if (nContext !== "head") {
-				return "modifier";
-			} else {
-				return sContext === "noun"
-					? "noun"
-					: sContext === "interjection"
-						? "interjection_head"
-						: sContext === "tverbal"
-							? "tverb"
-							: "iverb";
-			}
+			return inHead ? headTags[role] : "modifier";
 		default:
 			return "particle";
 	}

@@ -1,124 +1,74 @@
-import { labels } from "./consts.js";
+// Postprocessors used by grammar.ne to build trees.
+
 import type { Token } from "./lex.js";
-import type {
-	Branch,
-	Label,
-	Labelled,
-	Leaf,
-	Rose,
-	Tree,
-	Word,
+import {
+	labels,
+	type Label,
+	type Leaf,
+	type Node,
+	type Tree,
 } from "./types.js";
 
-const labelSet = new Set(labels);
-function isLabel(x: string): x is Label {
-	return labelSet.has(x as Label);
-}
+const labelSet = new Set<string>(labels);
 
-function validateLabel(x: string): Label {
-	if (!isLabel(x)) {
-		throw new Error(`Invalid label: ${x}`);
+// The generated grammar is untyped, so catch label typos when it loads.
+function checkLabel(label: string): Label {
+	if (!labelSet.has(label)) {
+		throw new Error(`Invalid label: ${label}`);
 	}
-	return x;
+	return label as Label;
 }
 
-function catSource(...args: (Tree | string | undefined | null)[]) {
-	return args
-		.map((x) => (typeof x === "string" ? x : x ? x.source : undefined))
-		.filter((x) => x)
-		.join(" ");
-}
-
-export function makeWord([token]: [Token]): Word {
-	return {
-		index: token.index,
-		text: token.value,
-	};
-}
-
-export function makeLeaf(label: Label): (tokens: [Token, Tree]) => Leaf {
-	validateLabel(label);
-	return ([token, aux]: [Token, Tree | undefined]) => ({
+/** A word, with an optional trailing emphatic "a". */
+export function makeLeaf(label: string) {
+	checkLabel(label);
+	return ([token, emphasis]: [Token, Leaf | null | undefined]): Leaf => ({
 		type: "leaf",
-		word: makeWord([token]),
-		aux,
-		label,
-		source: token.value,
+		label: label as Label,
+		word: { index: token.index, text: token.value },
+		...(emphasis ? { emphasis } : {}),
 	});
 }
 
-export function makeLabelled(
-	label: Label,
-): (tree: [Tree, Tree | undefined]) => Labelled {
-	validateLabel(label);
-	return ([tree, aux]: [Tree, Tree | undefined]) => ({
-		type: "labelled",
-		tree,
-		aux,
-		label,
-		source: tree.source,
+/** A node whose children are the rule's symbols. */
+export function makeNode(label: string) {
+	checkLabel(label);
+	return (children: Tree[]): Node => ({
+		type: "node",
+		label: label as Label,
+		children,
 	});
 }
 
-export function makeBranch(label: Label): (trees: [Tree, Tree]) => Branch {
-	validateLabel(label);
-	return ([left, right]: [Tree, Tree]) => {
-		return {
-			type: "branch",
-			left,
-			right,
-			label,
-			source: catSource(left, right),
-		};
-	};
+/** A node whose children are a repeated symbol (`X:+`). */
+export function makeList(label: string) {
+	checkLabel(label);
+	return ([children]: [Tree[]]): Node => ({
+		type: "node",
+		label: label as Label,
+		children,
+	});
 }
 
-export function makeRose(label: Label): (children: [Tree[]]) => Rose {
-	validateLabel(label);
-	return ([children]: [Tree[]]) => {
-		return {
-			type: "rose",
-			children,
-			label,
-			source: catSource(...children),
-		};
-	};
+/** Like `makeList`, but a single item is returned as is. */
+export function makeOptionalList(label: string) {
+	const list = makeList(label);
+	return ([children]: [Tree[]]): Tree =>
+		children.length === 1 ? children[0]! : list([children]);
 }
 
-export function makeRoseOptional(label: Label): (children: [Tree[]]) => Tree {
-	validateLabel(label);
-	return ([children]: [Tree[]]) => {
-		if (children.length === 1) {
-			return children[0]!;
-		}
-		return {
-			type: "rose",
-			children,
-			label,
-			source: catSource(...children),
-		};
-	};
-}
-
-export function makeRoseFromBranch(
-	label: Label,
-): (trees: [Tree, Tree]) => Rose {
-	validateLabel(label);
-	return ([left, right]: [Tree, Tree]) => {
-		if (right.type === "rose") {
-			return {
-				type: "rose",
-				children: [left, ...right.children],
-				label,
-				source: catSource(left, right),
-			};
-		}
-
-		return {
-			type: "rose",
-			children: [left, right],
-			label,
-			source: catSource(left, right),
-		};
-	};
+/**
+ * For right-recursive coordination (`X -> Item X`): prepends `first` to
+ * `rest`, flattening `rest` if it is the same kind of list.
+ */
+export function makeCoordination(label: string) {
+	checkLabel(label);
+	return ([first, rest]: [Tree, Tree]): Node => ({
+		type: "node",
+		label: label as Label,
+		children:
+			rest.type === "node" && rest.label === label
+				? [first, ...rest.children]
+				: [first, rest],
+	});
 }
