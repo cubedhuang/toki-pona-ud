@@ -1,57 +1,102 @@
-from dataclasses import asdict, dataclass
-import heapq
+"""Merge DiscordChatExporter JSON exports into one JSONL file per channel.
+
+Usage: python pipeline/0_aggregate.py OUT_DIR SOURCE...
+
+- Each SOURCE is a directory of exports or a .zip of them searched recursively.
+- Later sources win when a message ID appears twice.
+- Messages with no text are dropped.
+- Output is OUT_DIR/<channel>.jsonl, sorted by message ID, one object per line:
+
+    id, authorId, authorName, authorKind, replyTo, content
+
+- authorKind is "user", "webhook" (PluralKit/Tupperbox proxies), or "bot".
+- We keep authorName for the "webhook" case.
+"""
+
 import json
-import os
+import re
+import sys
+import zipfile
+from collections import defaultdict
+from pathlib import Path, PurePosixPath
+
+CHANNEL_ID = re.compile(r"\[(\d+)\](?: \(after [^)]*\))?(?: \[part \d+\])?\.json$")
 
 
-@dataclass(order=True)
-class Message:
-    id: int
-    authorId: int
-    content: str
-
-
-def get_dir_files(name):
-    dir = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(dir, name)
-
-    files = []
-    for entry in os.listdir(path):
-        full_path = os.path.join(path, entry)
-        if os.path.isfile(full_path):
-            files.append(full_path)
-    return files
-
-
-def add_messages(messages, path):
-    with open(path) as file:
-        data = json.load(file)
-        for raw_message in data["messages"]:
-            if len(raw_message["content"]) == 0 or raw_message["author"]["isBot"]:
+def find_exports(source: Path):
+    """Yield (channel_id, open_fn) for each export file in a directory or zip."""
+    if source.suffix == ".zip":
+        archive = zipfile.ZipFile(source)
+        names = sorted(n for n in archive.namelist() if n.endswith(".json"))
+        for name in names:
+            if "broken" in PurePosixPath(name).parts:
                 continue
-            message = Message(
-                id=int(raw_message["id"]),
-                authorId=int(raw_message["author"]["id"]),
-                content=raw_message["content"],
-            )
-            heapq.heappush(messages, message)
+            if match := CHANNEL_ID.search(name):
+                yield match.group(1), lambda name=name: archive.open(name)
+    else:
+        for path in sorted(source.rglob("*.json")):
+            if "broken" in path.relative_to(source).parts:
+                continue
+            if match := CHANNEL_ID.search(path.name):
+                yield match.group(1), lambda path=path: path.open("rb")
 
 
-def write_messages(messages, path):
-    dir = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(dir, path)
-    with open(path, "w") as output:
-        while len(messages):
-            message = heapq.heappop(messages)
-            output.write(json.dumps(asdict(message)) + "\n")
+def author_kind(author):
+    if not author["isBot"]:
+        return "user"
+    return "webhook" if author["discriminator"] == "0000" else "bot"
+
+
+def main():
+    out = Path(sys.argv[1])
+    sources = [Path(s) for s in sys.argv[2:]]
+    out.mkdir(parents=True, exist_ok=True)
+
+    exports = defaultdict(list)
+    for source in sources:
+        for channel_id, open_fn in find_exports(source):
+            exports[channel_id].append(open_fn)
+
+    for channel_id, open_fns in exports.items():
+        messages = {}
+        name = channel_id
+        for open_fn in open_fns:
+            with open_fn() as file:
+                export = json.load(file)
+            name = export["channel"]["name"]
+            for m in export["messages"]:
+                message_id = int(m["id"])
+                if not m["content"]:
+                    messages.pop(message_id, None)
+                    continue
+                author = m["author"]
+                reply_to = (m.get("reference") or {}).get("messageId")
+                messages[message_id] = (
+                    int(author["id"]),
+                    author["name"],
+                    author_kind(author),
+                    int(reply_to) if reply_to else None,
+                    m["content"],
+                )
+
+        target = out / f"{name}.jsonl"
+        with target.open("w") as file:
+            for message_id in sorted(messages):
+                author_id, author_name, kind, reply_to, content = messages[message_id]
+                record = {
+                    "id": message_id,
+                    "authorId": author_id,
+                    "authorName": author_name,
+                    "authorKind": kind,
+                    "replyTo": reply_to,
+                    "content": content,
+                }
+                file.write(json.dumps(record, ensure_ascii=False) + "\n")
+        print(
+            f"{target.name}: {len(messages)} messages from {len(open_fns)} files",
+            flush=True,
+        )
 
 
 if __name__ == "__main__":
-    files = get_dir_files("files") + get_dir_files("more-files")
-
-    messages: list[Message] = []
-    for file in files:
-        add_messages(messages, file)
-        print(f"added {os.path.basename(file)}")
-
-    write_messages(messages, "0.aggregated.jsonl")
+    main()
