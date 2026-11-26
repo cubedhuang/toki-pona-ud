@@ -11,6 +11,7 @@ Usage: python pipeline/0_aggregate.py OUT_DIR SOURCE...
 
 - authorKind is "user", "webhook" (PluralKit/Tupperbox proxies), or "bot".
 - We keep authorName for the "webhook" case.
+- @-mentions in content are replaced with @USER.
 """
 
 import json
@@ -39,6 +40,17 @@ def find_exports(source: Path):
                 continue
             if match := CHANNEL_ID.search(path.name):
                 yield match.group(1), lambda path=path: path.open("rb")
+
+
+LEFTOVER_MENTION = re.compile(r"(?<![\w@])@(?!USER\b)[^\s@]+")
+
+
+def anonymize_mentions(content, mentions):
+    """Replace @-mentions with @USER, using exact names first since they can contain spaces."""
+    names = {n for u in mentions for n in (u["name"], u["nickname"]) if n}
+    for name in sorted(names, key=len, reverse=True):
+        content = content.replace("@" + name, "@USER")
+    return LEFTOVER_MENTION.sub("@USER", content)
 
 
 def author_kind(author):
@@ -76,7 +88,7 @@ def main():
                     author["name"],
                     author_kind(author),
                     int(reply_to) if reply_to else None,
-                    m["content"],
+                    anonymize_mentions(m["content"], m["mentions"]),
                 )
 
         target = out / f"{name}.jsonl"
