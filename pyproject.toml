@@ -2,4 +2,4 @@
 name = "toki-pona-ud"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["requests==2.32.5", "sonatoki==0.13.0"]
+dependencies = ["pyyaml==6.0.4", "requests==2.32.5", "sonatoki==0.13.0"]

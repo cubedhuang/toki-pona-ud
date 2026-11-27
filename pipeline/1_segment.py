@@ -2,9 +2,9 @@
 
 Usage: python pipeline/1_segment.py IN_DIR OUT_DIR
 
-Reads IN_DIR/<channel>.jsonl from 0_aggregate.py.
-Writes OUT_DIR/<channel>.jsonl with one line per message that has at least one kept sentence.
-- Bot messages are skipped.
+Reads IN_DIR/*.jsonl from 0_aggregate.py (Discord) or 0_poki.py (poki Lapo).
+Writes OUT_DIR/<same name>.jsonl with one line per message that has at least one kept sentence.
+- Bot messages are skipped. poki Lapo paragraphs count as messages.
 - Discord markup, code, quoted (`> `) lines, struck-through text and custom emoji are removed
   first. Sentences written with sitelen pona word emoji (:zz_pona:) are dropped.
 - Each line keeps the message metadata but `content` is replaced with `sentences`.
@@ -95,7 +95,7 @@ def merge_mentions(tokens: list[str]) -> list[str]:
 
 def segment(line: str) -> str | None:
     message = json.loads(line)
-    if message["authorKind"] == "bot":
+    if message.get("authorKind") == "bot":
         return None
     content = clean(message.pop("content"))
     message_score = score(content)
