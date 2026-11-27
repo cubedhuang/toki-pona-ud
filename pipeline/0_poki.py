@@ -63,7 +63,7 @@ QUOTE_PREFIX = re.compile(r"^(?:>\s?)+", re.MULTILINE)
 TABLE_ROW = re.compile(r"^\s*\|.*$", re.MULTILINE)
 HEADING = re.compile(r"^#{1,6}\s+", re.MULTILINE)
 LIST_MARKER = re.compile(r"^\s*(?:[-*+]|\d+\.)\s+", re.MULTILINE)
-HARD_BREAK = re.compile(r"(?:\s{2,}|\\)$", re.MULTILINE)
+HARD_BREAK = re.compile(r"[ \t]*\\?[ \t]*$", re.MULTILINE)
 ESCAPE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!|~<>\"'])")
 
 
@@ -91,6 +91,8 @@ def plain_paragraphs(body: str) -> list[str]:
 def main():
     out_dir = Path(sys.argv[1])
     plaintext = Path(sys.argv[2]) / "plaintext"
+    if not plaintext.is_dir():
+        sys.exit(f"{plaintext} not found; POKI should be a clone of the poki Lapo repository")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     licenses = Counter()

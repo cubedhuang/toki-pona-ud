@@ -7,6 +7,12 @@ Writes OUT_DIR/<same name>.jsonl with one line per message that has at least one
 - Bot messages are skipped. poki Lapo paragraphs count as messages.
 - Discord markup, code, quoted (`> `) lines, struck-through text and custom emoji are removed
   first. Sentences written with sitelen pona word emoji (:zz_pona:) are dropped.
+- Sentences end at . ? ! : ; … and newlines, but not at brackets or dashes. A bracket opened
+  in the middle of a sentence keeps everything up to its closing bracket in that sentence, even
+  across sentence punctuation. A bracket opened at the start of a sentence doesn't, so
+  `(ona li pona. sina seme?)` is two sentences, like it would be without the brackets.
+  Closing brackets and quotes and repeated punctuation (`!!`, `...`) stay with the sentence
+  they close.
 - Each line keeps the message metadata but `content` is replaced with `sentences`.
 
     {"text": original sentence, "tokens": sonatoki tokens, "score": sonatoki score}
@@ -21,13 +27,67 @@ from pathlib import Path
 from sonatoki.Configs import CorpusConfig
 from sonatoki.constants import words_by_tag
 from sonatoki.ilo import Ilo
+from sonatoki.Tokenizers import SentTokenizer
 
 MIN_MESSAGE_SCORE = 0.1  # drop messages that are barely Toki Pona
 MIN_SENTENCE_SCORE = 0.8
 MIN_WORDS = 3  # short sentences pass only if the message as a whole is
 MIN_MESSAGE_SCORE_FOR_SHORT = 0.3  # Toki Pona enough
 
-ILO = Ilo(**CorpusConfig)
+CLOSERS = set(")]}”»›」』")
+
+
+class Sentences(SentTokenizer):
+    """sonatoki's sentence splitter, minus brackets and dashes as sentence boundaries."""
+
+    delimiters = SentTokenizer.delimiters - set("()[]-")
+
+    @classmethod
+    def tokenize(cls, s: str) -> list[str]:
+        sentences = []
+        pieces = super().tokenize(s)
+        for i, sentence in enumerate(pieces):
+            if sentences and sentences[-1][-1] in cls.delimiters | CLOSERS:
+                carried = carried_over(sentence, sentences[-1])
+                sentences[-1] += sentence[:carried]
+                sentence = sentence[carried:].strip()
+            if not sentence:
+                continue
+            # A bracket opened mid-sentence that closes later in the message keeps
+            # everything up to it together.
+            if sentences and interrupting(sentences[-1]) & set("".join(pieces[i:])):
+                sentences[-1] += " " + sentence
+            else:
+                sentences.append(sentence)
+        return sentences
+
+
+BRACKETS = {"(": ")", "[": "]"}
+
+
+def interrupting(sentence: str) -> set[str]:
+    """Closing brackets still owed by `sentence` for brackets opened after its start."""
+    opened = []  # (index, closer) of brackets not closed yet
+    for i, char in enumerate(sentence):
+        if char in BRACKETS:
+            opened.append((i, BRACKETS[char]))
+        elif opened and char == opened[-1][1]:
+            opened.pop()
+    return {close for i, close in opened if i > 0}
+
+
+def carried_over(sentence: str, previous: str) -> int:
+    """How many leading characters of `sentence` close `previous` instead."""
+    quotes = previous.count('"')
+    for i, char in enumerate(sentence):
+        if char == '"' and quotes % 2:
+            quotes += 1
+        elif char not in Sentences.delimiters | CLOSERS:
+            return i
+    return len(sentence)
+
+
+ILO = Ilo(**CorpusConfig, sent_tokenizer=Sentences)
 
 TOKI_PONA_WORDS = {
     word
