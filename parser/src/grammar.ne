@@ -71,7 +71,7 @@ Predicate<none> -> PreverbPhrase {% makeNode("predicate", 0) %}
 
 ### Predicates
 
-PreverbPhrase -> Preverb PreverbPhrase {% makeNode("preverb_phrase", 1) %}
+PreverbPhrase -> Preverb PreverbPhrase {% makeNode("preverb_phrase", 0) %}
 PreverbPhrase -> VerbPhrase {% id %}
 
 Preverb -> WordPreverb {% id %}
