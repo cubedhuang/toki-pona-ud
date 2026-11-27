@@ -23,13 +23,13 @@
 				: { kind: "incomplete" };
 		} catch (e) {
 			// nearley attaches the token it couldn't accept.
-			const token = (e as { token?: { value: string; offset: number } })
+			const token = (e as { token?: { written: string; offset: number } })
 				.token;
 			if (!token) throw e;
 			return {
 				kind: "unexpected",
 				offset: token.offset,
-				word: token.value,
+				word: token.written,
 			};
 		}
 	});

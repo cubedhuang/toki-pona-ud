@@ -37,9 +37,9 @@ export function makeWord(roleName: string) {
 		const word: Word = {
 			type: "word",
 			role,
-			text: token.value,
+			text: token.written,
 			position: token.position,
-			offset: token.offset,
+			...(token.offset !== undefined && { offset: token.offset }),
 		};
 		return emphasis ? phrase("emphasized", [word, emphasis], 0) : word;
 	};

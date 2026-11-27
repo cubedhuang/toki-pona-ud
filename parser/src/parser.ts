@@ -1,6 +1,7 @@
 import nearley from "nearley";
 
 import grammar from "./grammar.js";
+import type { Input } from "./lex.js";
 import { isModifier } from "./tree.js";
 import type { PhraseLabel, Tree } from "./types.js";
 
@@ -11,13 +12,15 @@ export interface Result {
 }
 
 /**
- * Parses a sentence into every possible tree, most likely first. Throws on a
- * syntax error; returns `[]` if the sentence ends early.
+ * Parses a sentence, given as text or tokens, into every possible tree, most
+ * likely first. Throws on a syntax error; returns `[]` if the sentence ends
+ * early.
  */
-export function parse(text: string): Result[] {
+export function parse(input: Input): Result[] {
+	// The lexer accepts tokens too, though nearley's types only allow strings.
 	const parser = new nearley.Parser(
 		nearley.Grammar.fromCompiled(grammar),
-	).feed(text);
+	).feed(input as string);
 
 	const scored = (parser.results as Tree[])
 		.map((tree) => ({ tree, score: scoreTree(tree) }))

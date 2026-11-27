@@ -14,12 +14,28 @@ export type TokenType = (typeof tokenTypes)[number];
 
 export interface Token {
 	type: TokenType;
+	/** The form the grammar matches, which is lowercased where capitals are only spelling. */
 	value: string;
-	/** Index of the token among the sentence's tokens, from 0. */
+	/**
+	 * The word as written. Not called `text`, which nearley would match
+	 * literals against instead of `value`.
+	 */
+	written: string;
+	/**
+	 * Index of the token in the input: among the given tokens, or among the
+	 * words of the text.
+	 */
 	position: number;
-	/** Character offset of the token in the input text. */
-	offset: number;
+	/** Character offset of the token in the input text, if the input was text. */
+	offset?: number;
 }
+
+/**
+ * What the parser reads: text, which is split into words, or tokens (such as
+ * sonatoki's), of which only words are parsed. Skipped tokens, like
+ * punctuation and numbers, still count toward `position`.
+ */
+export type Input = string | readonly string[];
 
 export const particles = new Set([
 	"li",
@@ -56,26 +72,54 @@ function classify(word: string): TokenType {
 	return "word_content";
 }
 
-/** Splits text into runs of ASCII letters; everything else is skipped. */
-export class TokiPonaLexer implements Lexer {
-	private words: IterableIterator<RegExpMatchArray> = [].values();
-	private position = 0;
+// Latin letters, possibly joined by hyphens or apostrophes (toki-pona, Pije's).
+const WORD = String.raw`\p{Script=Latin}+(?:['’-]\p{Script=Latin}+)*`;
+const WORDS = new RegExp(WORD, "gu");
+const IS_WORD = new RegExp(`^${WORD}$`, "u");
 
-	reset(text: string) {
-		this.words = text.matchAll(/[a-z]+/gi);
-		this.position = 0;
+type Written = Pick<Token, "written" | "position" | "offset">;
+
+function words(input: Input): Written[] {
+	if (typeof input === "string") {
+		return Array.from(input.matchAll(WORDS), (match, position) => ({
+			written: match[0],
+			position,
+			offset: match.index,
+		}));
+	}
+	return input.flatMap((written, position) =>
+		IS_WORD.test(written) ? [{ written, position }] : [],
+	);
+}
+
+/**
+ * Capitals mark names, except on the first word of a sentence and in
+ * sentences written in all caps, where they are only spelling.
+ */
+function lex(input: Input): Token[] {
+	const written = words(input);
+	const allCaps =
+		written.length > 1 &&
+		written.every((word) => word.written === word.written.toUpperCase());
+	return written.map((word, i) => {
+		const value =
+			i === 0 || allCaps ? word.written.toLowerCase() : word.written;
+		return { ...word, type: classify(value), value };
+	});
+}
+
+export class TokiPonaLexer implements Lexer {
+	private tokens: Token[] = [];
+	private index = 0;
+
+	// nearley passes along whatever is fed to the parser, so this can take tokens.
+	reset(input: Input) {
+		this.tokens = lex(input);
+		this.index = 0;
 	}
 
 	next(): Token | undefined {
-		const match = this.words.next().value;
-		if (!match) return undefined;
-		const value = match[0];
-		return {
-			type: classify(value),
-			value,
-			position: this.position++,
-			offset: match.index!,
-		};
+		return this.tokens[this.index++];
 	}
 
 	save() {
@@ -83,7 +127,11 @@ export class TokiPonaLexer implements Lexer {
 	}
 
 	formatError(token: Token) {
-		return `'${token.value}' at index ${token.offset}`;
+		const where =
+			token.offset === undefined
+				? `token ${token.position}`
+				: `index ${token.offset}`;
+		return `'${token.written}' at ${where}`;
 	}
 
 	has(tokenType: string) {

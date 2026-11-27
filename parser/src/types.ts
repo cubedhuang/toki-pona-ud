@@ -59,10 +59,10 @@ export interface Word {
 	type: "word";
 	role: WordRole;
 	text: string;
-	/** Index of the word among the sentence's words. */
+	/** Index of the word's token in the input (see `Input`). */
 	position: number;
-	/** Character offset of the word in the input text. */
-	offset: number;
+	/** Character offset of the word in the input text, if the input was text. */
+	offset?: number;
 }
 
 export interface Phrase {
