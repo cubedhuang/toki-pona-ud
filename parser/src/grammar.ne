@@ -11,6 +11,9 @@ import {
 import { TokiPonaLexer } from "./lex.js";
 
 const lexer = new TokiPonaLexer();
+
+// "X ala X" token
+const question = { test: (token) => token.question === true };
 %}
 
 @lexer lexer
@@ -114,11 +117,12 @@ PiPhrase<M> -> NanpaPhrase<M> {% id %}
 PiPhrase<M> -> PiPhrase<any> PiModifier {% makeNode("phrase", 0) %}
 
 PiModifier -> WordRegrouper PiPhrase<multiple> {% makeNode("pi", 1) %}
+PiModifier -> WordRegrouper WordQuestion {% makeNode("pi", 1) %}
 
 NanpaPhrase<M> -> SimplePhrase<M> {% id %}
 NanpaPhrase<M> -> NanpaPhrase<any> Ordinal {% makeNode("phrase", 0) %}
 
-Ordinal -> WordOrdinalMarker Number {% makeNode("ordinal", 1) %}
+Ordinal -> WordOrdinalMarker Number {% makeNode("ordinal", 0) %}
 
 SimplePhrase<M> -> SimplePhrase<any> WordModifier {% makeNode("phrase", 0) %}
 SimplePhrase<any> -> WordHead {% id %}
@@ -157,6 +161,8 @@ WordUnmarkedSubject -> %word_unmarked_subject {% makeWord("content") %}
 WordModifier -> %word_modifier_only {% makeWord("content") %}
 WordModifier -> WordEmphasis {% id %}
 WordModifier -> WordHead {% id %}
+
+WordQuestion -> %question {% makeWord("content") %}
 
 WordPreverb -> %word_preverb WordEmphasis:? {% makeWord("preverb") %}
 WordPreposition -> %word_preposition WordEmphasis:? {% makeWord("preposition") %}

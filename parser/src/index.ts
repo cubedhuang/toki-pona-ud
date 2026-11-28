@@ -1,7 +1,8 @@
 export * from "./parser.js";
 export * from "./tag.js";
 export * from "./types.js";
-export type { Input } from "./lex.js";
+export { tokenize, type Input } from "./lex.js";
+export * from "./ud.js";
 
 import type { Input } from "./lex.js";
 import { parse, type Result } from "./parser.js";

@@ -25,7 +25,12 @@
 			<p
 				class="relative top-3 -mt-3 rounded-lg border-2 border-green-300 bg-green-50 px-1 py-0.5 text-sm"
 			>
-				{tree.text}
+				{tree.question
+					? `${tree.text} ala ${tree.text}`
+					: [
+							tree.text,
+							...(tree.alternatives ?? []).map((a) => a.text),
+						].join("/")}
 			</p>
 		</div>
 	</div>

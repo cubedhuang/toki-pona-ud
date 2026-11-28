@@ -7,6 +7,9 @@ Writes OUT_DIR/<same name>.jsonl with one line per message that has at least one
 - Bot messages are skipped. poki Lapo paragraphs count as messages.
 - Discord markup, code, quoted (`> `) lines, struck-through text and custom emoji are removed
   first. Sentences written with sitelen pona word emoji (:zz_pona:) are dropped.
+- A line break ends a sentence unless the sentence clearly goes on: the line ends with a comma
+  or with li, e, la, pi, en, anu or o, or the next line starts with li, e, la, pi, en or anu.
+  Such lines are joined with a space first. See join_lines.
 - Sentences end at . ? ! : ; … and newlines, but not at brackets or dashes. A bracket opened
   in the middle of a sentence keeps everything up to its closing bracket in that sentence, even
   across sentence punctuation. A bracket opened at the start of a sentence doesn't, so
@@ -134,6 +137,42 @@ def clean(content: str) -> str:
     return EMPHASIS.sub("", content)
 
 
+CANT_END = {"li", "e", "la", "pi", "en", "anu", "o"}
+CANT_BEGIN = CANT_END - {"o"}
+ENDS_SENTENCE = re.compile(r"[.!?:;…][)\]}\"'”’»›」』]*[ \t]*$")
+WORD = re.compile(r"[^\W\d_]+")
+
+
+def continues(line: str, following: str) -> bool:
+    """Whether a sentence clearly goes on from `line` to the `following` line."""
+    if ENDS_SENTENCE.search(line):
+        return False
+    if re.search(r",[ \t]*$", line):
+        return True
+    last = WORD.findall(line)[-1:]
+    first = WORD.findall(following)[:1]
+    return (last and last[0].lower() in CANT_END) or (
+        first and first[0].lower() in CANT_BEGIN
+    )
+
+
+def join_lines(content: str) -> str:
+    """Join lines across which a sentence goes on, so the break doesn't split it.
+
+    A line break otherwise ends a sentence: in verse, lists and dialogue, each
+    line is usually one. Breaks with nothing on one side are left alone.
+    """
+    lines = content.split("\n")
+    joined = [lines[0]]
+    for line in lines[1:]:
+        previous = joined[-1]
+        if previous.strip() and line.strip() and continues(previous, line):
+            joined[-1] = previous.rstrip() + " " + line.lstrip()
+        else:
+            joined.append(line)
+    return "\n".join(joined)
+
+
 def score(text: str) -> float:
     """sonatoki's score, ignoring placeholders it doesn't know."""
     return ILO.make_scorecard(PLACEHOLDERS.sub(" ", text))["score"]
@@ -157,7 +196,7 @@ def segment(line: str) -> str | None:
     message = json.loads(line)
     if message.get("authorKind") == "bot":
         return None
-    content = clean(message.pop("content"))
+    content = join_lines(clean(message.pop("content")))
     message_score = score(content)
     if message_score <= MIN_MESSAGE_SCORE:
         return None
@@ -169,7 +208,9 @@ def segment(line: str) -> str | None:
         words = [w for w in card["filtered"] if w != "USER"]
         if not words:
             continue
-        sentence_score = score(card["text"]) if "USER" in card["filtered"] else card["score"]
+        sentence_score = (
+            score(card["text"]) if "USER" in card["filtered"] else card["score"]
+        )
         if sentence_score < MIN_SENTENCE_SCORE:
             continue
         if len(words) < MIN_WORDS and message_score < MIN_MESSAGE_SCORE_FOR_SHORT:

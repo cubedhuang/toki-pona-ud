@@ -6,6 +6,9 @@ Usage: python pipeline/0_poki.py OUT_DIR POKI
 - Only texts whose `license` is CC0, public domain, MIT, CC BY or CC BY-SA are kept.
   - NC, ND, all-rights-reserved and missing licenses are dropped.
 - Markdown and HTML are reduced to plain text, and each paragraph becomes one line.
+- Speaker labels at the start of a line (**jan Tepo:**, SITELEN NANPA WAN:) are removed.
+- In texts hard-wrapped at a fixed width (HARD_WRAPPED), line breaks within a paragraph are
+  spaces. Elsewhere they are kept, and 1_segment.py decides whether they end a sentence.
 - Output is OUT_DIR/poki.jsonl, one object per paragraph, in the shape 1_segment.py reads:
 
     id, title, authors, original, date, license, sources, content
@@ -63,6 +66,23 @@ QUOTE_PREFIX = re.compile(r"^(?:>\s?)+", re.MULTILINE)
 TABLE_ROW = re.compile(r"^\s*\|.*$", re.MULTILINE)
 HEADING = re.compile(r"^#{1,6}\s+", re.MULTILINE)
 LIST_MARKER = re.compile(r"^\s*(?:[-*+]|\d+\.)\s+", re.MULTILINE)
+# A label and colon at the start of a line.
+# - Followed by the text it labels on the same line
+# - For names and bold labels they may be on the next line
+LABEL = (
+    r"(?:\*\*|__)[^*_\n:]{1,40}:(?:\*\*|__)"  # **jan Tepo:**
+    r"|(?:\*\*|__)[^*_\n:]{1,40}(?:\*\*|__):"  # **jan Tepo**:
+    r"|[a-z]+(?: [A-Z][\w'’-]*)+:"  # jan Tepo:
+)
+CAPS_LABEL = r"[A-Z]{2,}(?: [A-Z]{2,}){0,5}:"  # SITELEN NANPA WAN:
+SPEAKER = re.compile(
+    rf"^(?:(?:{LABEL})(?:[ \t]+|[ \t]*\\?[ \t]*\n)|{CAPS_LABEL}[ \t]+)(?=[ \t]*\S)",
+    re.MULTILINE,
+)
+# Prose wrapped at a fixed width, where line breaks fall mid-sentence. Found by
+# ranking texts by lines that end a sentence partway through but not at the end.
+HARD_WRAPPED = {"2022/07/sona-sin-pona-tan-jan-sewi-jojane.md"}
+
 HARD_BREAK = re.compile(r"[ \t]*\\?[ \t]*$", re.MULTILINE)
 ESCAPE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!|~<>\"'])")
 
@@ -81,6 +101,7 @@ def plain_paragraphs(body: str) -> list[str]:
     body = TABLE_ROW.sub("", body)
     body = HEADING.sub("", body)
     body = LIST_MARKER.sub("", body)
+    body = SPEAKER.sub("", body)
     body = HARD_BREAK.sub("", body)
     body = ESCAPE.sub(r"\1", body)
     body = html.unescape(body)
@@ -92,7 +113,9 @@ def main():
     out_dir = Path(sys.argv[1])
     plaintext = Path(sys.argv[2]) / "plaintext"
     if not plaintext.is_dir():
-        sys.exit(f"{plaintext} not found; POKI should be a clone of the poki Lapo repository")
+        sys.exit(
+            f"{plaintext} not found; POKI should be a clone of the poki Lapo repository"
+        )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     licenses = Counter()
@@ -115,6 +138,8 @@ def main():
             licenses[license] += 1
             name = path.relative_to(plaintext).as_posix()
             for n, content in enumerate(plain_paragraphs(match.group(2)), 1):
+                if name in HARD_WRAPPED:
+                    content = re.sub(r"[ \t]*\n[ \t]*", " ", content)
                 record = {
                     "id": f"{name}#{n}",
                     "title": meta["title"],

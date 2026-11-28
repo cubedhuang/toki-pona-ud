@@ -63,6 +63,15 @@ export interface Word {
 	position: number;
 	/** Character offset of the word in the input text, if the input was text. */
 	offset?: number;
+	/** Set for names: unofficial words, written with a capital. */
+	name?: true;
+	/**
+	 * Set when the word stands for an "X ala X" question. Its `ala` and the
+	 * repeated X are at the next two positions.
+	 */
+	question?: true;
+	/** The other words of "X/Y/Z" alternatives, which this word, X, stands for. */
+	alternatives?: { text: string; position: number }[];
 }
 
 export interface Phrase {

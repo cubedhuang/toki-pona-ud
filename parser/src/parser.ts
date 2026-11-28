@@ -1,7 +1,18 @@
 import nearley from "nearley";
 
 import grammar from "./grammar.js";
-import type { Input } from "./lex.js";
+import {
+	contentOf,
+	isForeign,
+	keepOnly,
+	maskParentheticals,
+	parentheticals,
+	segments,
+	tokenize,
+	type Input,
+	type TokensWithText,
+	TokiPonaLexer,
+} from "./lex.js";
 import { isModifier } from "./tree.js";
 import type { PhraseLabel, Tree } from "./types.js";
 
@@ -13,14 +24,72 @@ export interface Result {
 
 /**
  * Parses a sentence, given as text or tokens, into every possible tree, most
- * likely first. Throws on a syntax error; returns `[]` if the sentence ends
- * early.
+ * likely first. Word positions are token indices, as from `tokenize`. Throws
+ * on a syntax error; returns `[]` if the sentence ends early.
+ *
+ * Words in brackets are left out of the tree, and `toUD` parses them
+ * separately, unless the sentence only parses with them, as in "kama jo (e)
+ * moku". With tokens, `text`, if given, tells where the spaces are, which
+ * decides whether a slash joins alternatives (wile/alasa).
  */
-export function parse(input: Input): Result[] {
-	// The lexer accepts tokens too, though nearley's types only allow strings.
-	const parser = new nearley.Parser(
-		nearley.Grammar.fromCompiled(grammar),
-	).feed(input as string);
+export function parse(input: Input, text?: string): Result[] {
+	// Text is split into tokens first, so it's parsed the same way.
+	if (typeof input === "string") return parse(tokenize(input), input);
+	const masked = maskParentheticals(input);
+	if (masked === input) return parseAll(input, text);
+	const results = tryParse(masked, text);
+	if (results.length === 0) return parseAll(input, text);
+	if (
+		parentheticals(input).every(([a, b]) => parsesAlone(input, a, b, text))
+	) {
+		return results;
+	}
+	const whole = tryParse(input, text);
+	return whole.length ? whole : results;
+}
+
+function tryParse(input: Input, text?: string): Result[] {
+	try {
+		return parseAll(input, text);
+	} catch {
+		return [];
+	}
+}
+
+/** Whether each Toki Pona alternative in a parenthetical parses on its own. */
+function parsesAlone(
+	tokens: readonly string[],
+	open: number,
+	close: number,
+	text?: string,
+) {
+	return segments(tokens, open, close).every((segment) => {
+		const content = contentOf(tokens, segment);
+		return (
+			content.length === 0 ||
+			isForeign(tokens, content) ||
+			tryParse(keepOnly(tokens, segment), text).length > 0
+		);
+	});
+}
+
+function parseAll(input: Input, text?: string): Result[] {
+	const fed: Input | TokensWithText =
+		typeof input === "string" || text === undefined
+			? input
+			: { tokens: input, text };
+	const compiled = nearley.Grammar.fromCompiled(grammar);
+	const lexer = new BudgetedLexer();
+	compiled.lexer = lexer;
+	const parser = new nearley.Parser(compiled);
+	lexer.parser = parser;
+	try {
+		// The lexer accepts tokens too, though nearley's types only allow strings.
+		parser.feed(fed as string);
+	} catch (e) {
+		if (lexer.exceeded) throw new AmbiguityError();
+		throw e;
+	}
 
 	const scored = (parser.results as Tree[])
 		.map((tree) => ({ tree, score: scoreTree(tree) }))
@@ -33,6 +102,37 @@ export function parse(input: Input): Result[] {
 	}));
 }
 
+export class AmbiguityError extends Error {
+	constructor() {
+		super("Too many possible parses");
+		this.name = "AmbiguityError";
+	}
+}
+
+// nearley keeps every reading apart, so a sentence whose readings multiply
+// with each phrase fills the chart exponentially. In poki Lapo, no sentence of up
+// to 30 words needs more than about 3,700 states in a column.
+const MAX_STATES = 50_000;
+
+class BudgetedLexer extends TokiPonaLexer {
+	parser?: nearley.Parser;
+	exceeded = false;
+
+	override next() {
+		// nearley asks for the next token once the current column is done.
+		const parser = this.parser as
+			(nearley.Parser & { table: { states: unknown[] }[] }) | undefined;
+		if (
+			parser &&
+			parser.table[parser.current]!.states.length > MAX_STATES
+		) {
+			this.exceeded = true;
+			throw new AmbiguityError();
+		}
+		return super.next();
+	}
+}
+
 const goodLabels = new Set<PhraseLabel>([
 	"ordinal",
 	"preverb_phrase",
@@ -42,8 +142,36 @@ const goodLabels = new Set<PhraseLabel>([
 	"verb_phrase_prepositional",
 ]);
 
+// "olin o, mi lon", "olin o, ona li lon"
+const vocativeClauses = new Set<PhraseLabel>([
+	"clause_marked_subject",
+	"clause_unmarked_subject",
+]);
+
+/** The clause under any sentence starters and la phrases. */
+function innerClause(tree: Tree): Tree {
+	while (tree.type === "phrase" && tree.label === "clause") {
+		tree = tree.children[tree.head!]!;
+	}
+	return tree;
+}
+
 // These words are rarely heads.
 const unlikelyHeads = new Set(["ala", "taso", "kin", "n"]);
+
+/** Whether `tree` adds a pi group to a phrase that already ends in one. */
+function stacksPi(tree: Tree): boolean {
+	if (tree.type !== "phrase" || tree.label !== "phrase") return false;
+	const [left, right] = tree.children;
+	const isPi = (t: Tree | undefined) =>
+		t?.type === "phrase" && t.label === "pi";
+	return (
+		isPi(right) &&
+		left?.type === "phrase" &&
+		left.label === "phrase" &&
+		isPi(left.children.at(-1))
+	);
+}
 
 function scoreTree(tree: Tree, modifier = false): number {
 	if (tree.type === "word") {
@@ -51,14 +179,22 @@ function scoreTree(tree: Tree, modifier = false): number {
 		if (
 			tree.role === "content" &&
 			!modifier &&
-			unlikelyHeads.has(tree.text)
+			unlikelyHeads.has(tree.text.toLowerCase())
 		) {
-			return -1.5;
+			return -2;
 		}
 		return 0;
 	}
 
 	let score = goodLabels.has(tree.label) ? 1 : 0;
+	// slightly prefer nested pi
+	if (stacksPi(tree)) score -= 0.25;
+	if (tree.label === "main") {
+		const rest = innerClause(tree.children[tree.head!]!);
+		if (rest.type === "phrase" && vocativeClauses.has(rest.label)) {
+			score += 2;
+		}
+	}
 	tree.children.forEach((child, i) => {
 		score += scoreTree(child, isModifier(tree, i));
 	});

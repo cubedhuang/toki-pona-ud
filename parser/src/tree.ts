@@ -40,6 +40,14 @@ export function makeWord(roleName: string) {
 			text: token.written,
 			position: token.position,
 			...(token.offset !== undefined && { offset: token.offset }),
+			...(token.type === "word_modifier_only" && { name: true }),
+			...(token.question && { question: true }),
+			...(token.alternatives && {
+				alternatives: token.alternatives.map((a) => ({
+					text: a.written,
+					position: a.position,
+				})),
+			}),
 		};
 		return emphasis ? phrase("emphasized", [word, emphasis], 0) : word;
 	};
