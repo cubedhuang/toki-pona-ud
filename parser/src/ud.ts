@@ -173,6 +173,30 @@ export function toUD(
 	}
 	for (const word of info.keys()) resolve(word);
 
+	// Emphasis on a function word (lon a) goes to the word it marks, since
+	// function words have no dependents in UD.
+	for (const i of info.values()) {
+		const head = i.head && info.get(i.head);
+		if (
+			i.deprel === "discourse" &&
+			head?.head &&
+			FUNCTION.has(head.deprel!)
+		) {
+			i.head = head.head;
+		}
+	}
+
+	// A determiner can't head a pi group (pi ale), since determiners have no
+	// dependents: there it is the noun "everything", or a pronoun (pi ni).
+	for (const [word, i] of info) {
+		if (word.role !== "regrouper" || upos.get(i.head!) !== "DET") continue;
+		const head = i.head!;
+		const text = head.text.toLowerCase();
+		upos.set(head, text === "ale" || text === "ali" ? "NOUN" : "PRON");
+		const headInfo = info.get(head)!;
+		if (headInfo.deprel === "det") headInfo.deprel = "nmod";
+	}
+
 	// Consecutive number words modifying a noun form one additive numeral (tu
 	// wan "three"): the first is nummod and the rest are compound on it, as
 	// in UD Czech (dvacet dva).
@@ -358,6 +382,8 @@ function attachParenthetical(
 	Object.assign(result[first]!, attachment);
 }
 
+const FUNCTION = new Set(["case", "mark", "aux", "cc"]);
+
 const NOMINAL = ["NOUN", "PROPN", "PRON", "NUM", "X"];
 
 /** Whether the word at `head` heads a clause, with a subject or li or o. */
@@ -419,23 +445,26 @@ function analyzeSegment(
 	}
 
 	const head = content[0]!;
+	const capital = (form: string) =>
+		isWord(form) && form !== form.toLowerCase();
+	// A foreign name (Alan Turing) is PROPN held together by flat like other
+	// names; other foreign text is X held together by flat:foreign.
+	const name = foreign && content.every((p) => capital(tokens[p]!));
 	for (const p of content) {
 		const form = tokens[p]!;
-		const capital = isWord(form) && form !== form.toLowerCase();
 		const upos = foreign
-			? capital
+			? name
 				? "PROPN"
 				: "X"
-			: capital && p !== head
+			: capital(form) && p !== head
 				? "PROPN"
 				: lexicalUpos(form.toLowerCase());
 		Object.assign(result[p]!, {
-			lemma:
-				capital && (foreign || p !== head) ? form : form.toLowerCase(),
+			lemma: upos === "PROPN" || foreign ? form : form.toLowerCase(),
 			upos,
 			feats: foreign ? { Foreign: "Yes" } : {},
 			head: head + 1,
-			deprel: foreign ? "flat:foreign" : "dep",
+			deprel: !foreign ? "dep" : name ? "flat" : "flat:foreign",
 		});
 	}
 	return head;
@@ -475,7 +504,9 @@ function nounPhraseBefore(
 	position: number,
 ): number | undefined {
 	let i = position - 1;
-	while (i >= 0 && result[i]!.upos === "PUNCT") i--;
+	// Past punctuation and markers like la: open la (2001).
+	const marker = ["PUNCT", "ADP", "SCONJ", "CCONJ", "PART", "AUX"];
+	while (i >= 0 && marker.includes(result[i]!.upos)) i--;
 	if (i < 0) return undefined;
 	const word = ["amod", "compound", "flat", "det", "nummod", "advmod"];
 	// The highest nominal on the way: in li musi Soki (Shogi), the predicate
@@ -494,6 +525,7 @@ function nounPhraseBefore(
 
 /** A word's UPOS from its first sense in the lexicon, out of context. */
 function lexicalUpos(word: string): string {
+	if (/^\p{N}/u.test(word)) return "NUM";
 	const tags: Record<string, string> = {
 		NOUN: "NOUN",
 		ADJECTIVE: "ADJ",
@@ -697,6 +729,7 @@ function uposOf(word: Word, info: Info): string {
 			return STARTERS[text]?.upos ?? "INTJ";
 	}
 	if (word.name) return "PROPN";
+	if (/^\p{N}/u.test(text)) return "NUM";
 	if (text in PRONOUNS) return "PRON";
 	if (info.slot === "transitive") return "VERB";
 	if (info.slot === "intransitive") {
@@ -719,6 +752,7 @@ function modifierUpos(word: Word, headUpos: string): string {
 	const text = word.text.toLowerCase();
 	if (word.role === "emphasis") return "INTJ";
 	if (word.name) return "PROPN";
+	if (/^\p{N}/u.test(text)) return "NUM";
 	if (text === "ala") return "ADV";
 	if (["VERB", "ADJ", "ADV"].includes(headUpos)) return "ADV";
 	if (text === "ni" || text === "seme") return "DET";
@@ -767,7 +801,9 @@ function featsOf(word: Word, upos: string, info: Info): Record<string, string> {
 		return { Mood: info.imperative ? "Imp" : "Opt" };
 	}
 	if (text === "ala") return { Polarity: "Neg" };
-	if (text === "ale" || text === "ali") return { PronType: "Tot" };
+	if ((text === "ale" || text === "ali") && upos === "DET") {
+		return { PronType: "Tot" };
+	}
 	if (upos === "PRON" || upos === "DET") return { ...PRONOUNS[text] };
 	if (upos === "NUM") {
 		return { NumType: info.ordinal ? "Ord" : "Card" };

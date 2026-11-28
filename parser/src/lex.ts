@@ -106,7 +106,7 @@ function classify(word: string): TokenType {
 	if (particles.has(word)) return "word_particle";
 	if (prepositions.has(word)) return "word_preposition";
 	if (preverbs.has(word)) return "word_preverb";
-	if (numbers.has(word)) return "word_number";
+	if (numbers.has(word) || IS_NUMBER.test(word)) return "word_number";
 	if (word[0] !== word[0]!.toLowerCase()) return "word_modifier_only";
 	if (unmarkedSubjects.has(word)) return "word_unmarked_subject";
 	return "word_content";
@@ -114,8 +114,19 @@ function classify(word: string): TokenType {
 
 // Latin letters, possibly joined by hyphens or apostrophes (toki-pona, Pije's).
 const WORD = String.raw`\p{Script=Latin}+(?:['’-]\p{Script=Latin}+)*`;
-const WORDS = new RegExp(WORD, "gu");
+// Digits, possibly with a decimal point or separators (7.7, 2,3,4).
+const NUMBER = String.raw`\p{N}+(?:[.,]\p{N}+)*`;
+const WORDS = new RegExp(`${WORD}|${NUMBER}`, "gu");
 const IS_WORD = new RegExp(`^${WORD}$`, "u");
+const IS_NUMBER = new RegExp(`^${NUMBER}$`, "u");
+
+/**
+ * Whether the parser reads this token: a word, or digits, which stand where a
+ * number word could (e 1 e 2, nanpa 9, li 4509462252).
+ */
+export function isParsed(token: string): boolean {
+	return IS_WORD.test(token) || IS_NUMBER.test(token);
+}
 
 type Written = Pick<Token, "written" | "position" | "offset">;
 
@@ -136,7 +147,7 @@ function words(input: Input | TokensWithText): Written[] {
 		}));
 	}
 	return input.flatMap((written, position) =>
-		IS_WORD.test(written) ? [{ written, position }] : [],
+		isParsed(written) ? [{ written, position }] : [],
 	);
 }
 
@@ -185,8 +196,9 @@ function foldAlternatives(
 			: text.slice(a.offset + a.written.length, b?.offset);
 
 	const joinable = (a: Token, b: Token) =>
-		a.type !== "word_particle" &&
-		b.type !== "word_particle" &&
+		![a, b].some(
+			(t) => t.type === "word_particle" || IS_NUMBER.test(t.value),
+		) &&
 		(a.type === "word_modifier_only") ===
 			(b.type === "word_modifier_only") &&
 		after(a, b) === "/";
@@ -302,12 +314,12 @@ export function segments(
 	return result;
 }
 
-/** The positions holding words or other letters, not punctuation or numbers. */
+/** The positions holding words, digits or other letters, not punctuation. */
 export function contentOf(
 	tokens: readonly string[],
 	positions: number[],
 ): number[] {
-	return positions.filter((p) => /^\p{L}/u.test(tokens[p]!));
+	return positions.filter((p) => /^[\p{L}\p{N}]/u.test(tokens[p]!));
 }
 
 /**
@@ -321,7 +333,7 @@ export function isForeign(
 ): boolean {
 	const first = tokens[content[0]!]!;
 	return (
-		!isWord(first) ||
+		!isParsed(first) ||
 		(first !== first.toLowerCase() && !(first.toLowerCase() in lexicon))
 	);
 }
@@ -346,7 +358,7 @@ export function maskParentheticals(
 	const spans = parentheticals(tokens);
 	if (spans.length === 0) return tokens;
 	return tokens.map((token, i) =>
-		spans.some(([a, b]) => a < i && i < b) && isWord(token)
+		spans.some(([a, b]) => a < i && i < b) && isParsed(token)
 			? blank(token)
 			: token,
 	);

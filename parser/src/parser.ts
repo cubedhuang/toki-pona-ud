@@ -7,6 +7,7 @@ import {
 	keepOnly,
 	maskParentheticals,
 	parentheticals,
+	prepositions,
 	segments,
 	tokenize,
 	type Input,
@@ -14,7 +15,7 @@ import {
 	TokiPonaLexer,
 } from "./lex.js";
 import { isModifier } from "./tree.js";
-import type { PhraseLabel, Tree } from "./types.js";
+import type { PhraseLabel, Tree, Word } from "./types.js";
 
 export interface Result {
 	tree: Tree;
@@ -159,6 +160,10 @@ function innerClause(tree: Tree): Tree {
 // These words are rarely heads.
 const unlikelyHeads = new Set(["ala", "taso", "kin", "n"]);
 
+function leftmostWord(tree: Tree): Word {
+	return tree.type === "word" ? tree : leftmostWord(tree.children[0]!);
+}
+
 /** Whether `tree` adds a pi group to a phrase that already ends in one. */
 function stacksPi(tree: Tree): boolean {
 	if (tree.type !== "phrase" || tree.label !== "phrase") return false;
@@ -189,6 +194,12 @@ function scoreTree(tree: Tree, modifier = false): number {
 	let score = goodLabels.has(tree.label) ? 1 : 0;
 	// slightly prefer nested pi
 	if (stacksPi(tree)) score -= 0.25;
+	// A preposition phrase rarely has one inside its object: in mi tawa lon
+	// ma, tawa is the verb and lon ma its own phrase.
+	if (tree.label === "preposition_phrase") {
+		const first = leftmostWord(tree.children[1]!);
+		if (prepositions.has(first.text.toLowerCase())) score -= 1;
+	}
 	if (tree.label === "main") {
 		const rest = innerClause(tree.children[tree.head!]!);
 		if (rest.type === "phrase" && vocativeClauses.has(rest.label)) {
