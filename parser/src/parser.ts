@@ -14,8 +14,9 @@ import {
 	type TokensWithText,
 	TokiPonaLexer,
 } from "./lex.js";
-import { isModifier } from "./tree.js";
+import { headWord, isModifier } from "./tree.js";
 import type { PhraseLabel, Tree, Word } from "./types.js";
+import { lexicon } from "./wordClasses.js";
 
 export interface Result {
 	tree: Tree;
@@ -96,10 +97,9 @@ function parseAll(input: Input, text?: string): Result[] {
 		.map((tree) => ({ tree, score: scoreTree(tree) }))
 		.sort((a, b) => b.score - a.score);
 
-	const sum = scored.reduce((acc, r) => acc + Math.exp(r.score), 0);
 	return scored.map((r) => ({
 		tree: r.tree,
-		score: Math.exp(r.score) / sum,
+		score: r.score,
 	}));
 }
 
@@ -122,7 +122,8 @@ class BudgetedLexer extends TokiPonaLexer {
 	override next() {
 		// nearley asks for the next token once the current column is done.
 		const parser = this.parser as
-			(nearley.Parser & { table: { states: unknown[] }[] }) | undefined;
+			| (nearley.Parser & { table: { states: unknown[] }[] })
+			| undefined;
 		if (
 			parser &&
 			parser.table[parser.current]!.states.length > MAX_STATES
@@ -160,6 +161,12 @@ function innerClause(tree: Tree): Tree {
 // These words are rarely heads.
 const unlikelyHeads = new Set(["ala", "taso", "kin", "n"]);
 
+/** Whether the trees all have the same head word. */
+function sameHead(trees: Tree[]): boolean {
+	const heads = trees.map((t) => headWord(t).text.toLowerCase());
+	return heads.every((h) => h === heads[0]);
+}
+
 function leftmostWord(tree: Tree): Word {
 	return tree.type === "word" ? tree : leftmostWord(tree.children[0]!);
 }
@@ -194,6 +201,27 @@ function scoreTree(tree: Tree, modifier = false): number {
 	let score = goodLabels.has(tree.label) ? 1 : 0;
 	// slightly prefer nested pi
 	if (stacksPi(tree)) score -= 0.25;
+
+	// Options of anu with the same head are parallel: in mi lukin e poki loje
+	// anu poki laso, anu joins the two objects, not two predicates. This beats
+	// the preference for a second predicate.
+	if (tree.label === "& disjuncts" && sameHead(tree.children)) score += 1.5;
+
+	// sona/lukin before a word with no verb sense is a verb with a modifier, not a
+	// preverb: mi sona pona e nasin "I know the way well".
+	if (tree.label === "preverb_phrase") {
+		const preverb = leftmostWord(tree.children[0]!);
+		const next = headWord(tree.children[1]!);
+		const classes = lexicon[next.text.toLowerCase()] ?? [];
+		if (
+			preverb.text.toLowerCase() === "sona" &&
+			preverb.text.toLowerCase() === "lukin" &&
+			!classes.includes("VERB")
+		) {
+			score -= 1.5;
+		}
+	}
+
 	// A preposition phrase rarely has one inside its object: in mi tawa lon
 	// ma, tawa is the verb and lon ma its own phrase.
 	if (tree.label === "preposition_phrase") {

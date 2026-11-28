@@ -40,6 +40,11 @@ export interface Token {
 	 * for. Slashes separate them.
 	 */
 	alternatives?: Pick<Token, "written" | "position">[];
+	/**
+	 * Set when no word follows directly, or only "a": the token is followed by
+	 * punctuation or ends the sentence, as the greeting in "toki, ale o!".
+	 */
+	pause?: true;
 }
 
 /**
@@ -167,7 +172,18 @@ function lex(input: Input | TokensWithText): Token[] {
 					i === 0 || allCaps
 						? word.written.toLowerCase()
 						: word.written;
-				return { ...word, type: classify(value), value };
+				const next = written[i + 1];
+				const pause =
+					!next ||
+					(typeof input !== "string" &&
+						next.position !== word.position + 1) ||
+					next.written.toLowerCase() === "a";
+				return {
+					...word,
+					type: classify(value),
+					value,
+					...(pause && { pause: true as const }),
+				};
 			}),
 			input,
 		),

@@ -14,7 +14,7 @@ import {
 } from "./lex.js";
 import { parse } from "./parser.js";
 import { lexicon } from "./wordClasses.js";
-import { isModifier } from "./tree.js";
+import { headWord, isModifier } from "./tree.js";
 import type { Phrase, PhraseLabel, Tree, Word } from "./types.js";
 
 export interface UDToken {
@@ -47,6 +47,10 @@ interface Info extends Context {
 	deprel?: string;
 	/** Part of an ordinal numeral (nanpa tu wan), which is ordinal as a whole. */
 	ordinal?: boolean;
+	/** The head of a sentence that is only a phrase, like "pona." */
+	fragment?: boolean;
+	/** An adjective before la (pona la), which is an adverb, "fortunately". */
+	adverb?: boolean;
 }
 
 const PRONOUNS: Record<string, Record<string, string>> = {
@@ -104,6 +108,8 @@ export function toUD(
 			tree.children[tree.head]!,
 			headSlot ? { ...context, slot: headSlot } : context,
 		);
+		// pona la: an adjective before la is an adverb, "fortunately".
+		if (adjectivalContext(tree)) info.get(head)!.adverb = true;
 
 		let firstObject: Word | undefined;
 		tree.children.forEach((child, i) => {
@@ -148,6 +154,14 @@ export function toUD(
 	}
 
 	const root = walk(tree, { slot: "nominal", imperative: false });
+	// A sentence that is only a phrase (pona.), past any starters and la.
+	let top = tree;
+	while (top.type === "phrase" && top.label === "clause") {
+		top = top.children[top.head!]!;
+	}
+	if (top.type === "phrase" && top.label === "subject") {
+		info.get(root)!.fragment = true;
+	}
 	info.get(root)!.deprel = "root";
 
 	// A modifier's UPOS depends on its head's, which can be a modifier too, as
@@ -183,6 +197,18 @@ export function toUD(
 			FUNCTION.has(head.deprel!)
 		) {
 			i.head = head.head;
+		}
+	}
+
+	// Emphasis ending the sentence (sina ken kama a) is on the whole of it.
+	const last = Math.max(...[...info.keys()].map((w) => w.position));
+	for (const [word, i] of info) {
+		if (
+			word.role === "emphasis" &&
+			word.position === last &&
+			word !== root
+		) {
+			i.head = root;
 		}
 	}
 
@@ -365,7 +391,7 @@ function attachParenthetical(
 	if (isClause(result, first)) {
 		attachment = { head: root + 1, deprel: "parataxis" };
 	} else if (marker === "o") {
-		// (jan Sonja o)
+		// (ilo Tani o)
 		attachment = { head: root + 1, deprel: "vocative" };
 	} else if (marker !== undefined && prepositions.has(marker)) {
 		// (lon tenpo pini) is an adjunct of the predicate, or of a noun that
@@ -677,6 +703,7 @@ function relation(parent: Phrase, child: Tree, dependent: Word): string {
 		case "e":
 			return "obj";
 		case "preposition_phrase":
+			return "obl";
 		case "context_phrase":
 			return "obl";
 		case "context_clause":
@@ -730,6 +757,7 @@ function uposOf(word: Word, info: Info): string {
 	}
 	if (word.name) return "PROPN";
 	if (/^\p{N}/u.test(text)) return "NUM";
+	if (info.adverb) return "ADV";
 	if (text in PRONOUNS) return "PRON";
 	if (info.slot === "transitive") return "VERB";
 	if (info.slot === "intransitive") {
@@ -744,7 +772,28 @@ function uposOf(word: Word, info: Info): string {
 		if (classes.includes("NUMBER")) return "NUM";
 		return "VERB";
 	}
+	// Alone, a word is tagged by its first sense: pona. is ADJ, jan. NOUN.
+	if (info.fragment && lexicon[text]?.[0] === "ADJECTIVE") return "ADJ";
 	return "NOUN";
+}
+
+/**
+ * Whether `tree` is a phrase before la headed by an adjective (pona la, suli
+ * mute la). Its head is an adverb, "fortunately", which is obl like other
+ * phrases before la, as English "by now" is.
+ */
+function adjectivalContext(tree: Tree): boolean {
+	if (tree.type !== "phrase" || tree.label !== "context_phrase") return false;
+	// Not the object of a preposition (tan ni la).
+	const phrase = tree.children[tree.head!]!;
+	if (phrase.type === "phrase" && phrase.label === "preposition_phrase") {
+		return false;
+	}
+	const head = headWord(tree);
+	const text = head.text.toLowerCase();
+	return (
+		!head.name && !(text in PRONOUNS) && lexicon[text]?.[0] === "ADJECTIVE"
+	);
 }
 
 /** UPOS of a content word or emphasis modifying a head tagged `headUpos`. */

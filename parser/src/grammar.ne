@@ -14,6 +14,7 @@ const lexer = new TokiPonaLexer();
 
 // "X ala X" token
 const question = { test: (token) => token.question === true };
+const intj = { test: (token) => token.value === "toki" && token.pause === true };
 %}
 
 @lexer lexer
@@ -25,6 +26,9 @@ const question = { test: (token) => token.question === true };
 Main -> Vocative {% id %}
 Main -> Sentence {% id %}
 Main -> Vocative Main {% makeNode("main", 1) %}
+# toki! and toki, ale o!
+Main -> WordInterjection {% id %}
+Main -> WordInterjection Main {% makeNode("clause", 1) %}
 
 Vocative -> GeneralSubject WordVocativeMarker {% makeNode("vocative", 0) %}
 
@@ -34,6 +38,7 @@ Sentence -> Clause<any> {% id %}
 # Sentence -> Sentence WordEmphasis {% makeNode("clause", 0) %}
 
 Context -> GeneralSubject WordContextMarker {% makeNode("context_phrase", 0) %}
+Context -> PrepositionPhrase WordContextMarker {% makeNode("context_phrase", 0) %}
 Context -> Clause<strict> WordContextMarker {% makeNode("context_clause", 0) %}
 
 ### Clauses
@@ -171,3 +176,5 @@ WordSentenceStarter -> "taso" WordEmphasis:? {% makeWord("sentence_starter") %}
 WordSentenceStarter -> "kin" WordEmphasis:? {% makeWord("sentence_starter") %}
 WordSentenceStarter -> "n" WordEmphasis:? {% makeWord("sentence_starter") %}
 WordSentenceStarter -> "a" {% makeWord("sentence_starter") %}
+
+WordInterjection -> %intj WordEmphasis:? {% makeWord("sentence_starter") %}

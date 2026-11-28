@@ -81,10 +81,7 @@
 		return `calc(${0.75 + levels * 0.5}rem - ${levels * 2}px)`;
 	};
 
-	const percent = (p: number) =>
-		p >= 0.995 || p < 0.005
-			? `${Math.round(p * 100)}%`
-			: `${(p * 100).toFixed(1)}%`;
+	const formatScore = (p: number) => (p >= 0 ? `+${p}` : `${p}`);
 </script>
 
 <main class="my-20 px-8">
@@ -124,8 +121,8 @@
 			{#if results.length > 1}
 				<h2 class="text-xl font-bold">
 					Parse {i + 1}
-					<span class="text-sm font-normal text-gray-500">
-						({percent(result.score)})
+					<span class="text-xs font-normal text-gray-500">
+						({formatScore(result.score)} score)
 					</span>
 				</h2>
 			{/if}
